@@ -1384,12 +1384,29 @@ impl<'a> App<'a> {
                 _ => Gruvbox::GRAY,
             };
 
-            items.push(ListItem::new(Line::from(vec![
+            // State badge from AzDo
+            let state_spans = feature
+                .work_item
+                .as_ref()
+                .filter(|wi| !wi.state.is_empty())
+                .map(|wi| {
+                    let (label, color) = state_badge(&wi.state);
+                    vec![
+                        Span::styled(" [", Style::default().fg(Gruvbox::GRAY)),
+                        Span::styled(label, Style::default().fg(color)),
+                        Span::styled("]", Style::default().fg(Gruvbox::GRAY)),
+                    ]
+                })
+                .unwrap_or_default();
+
+            let mut spans = vec![
                 Span::raw("  "),
                 Span::styled(format!("{} ", icon), Style::default().fg(name_color)),
                 Span::styled(&feature.name, Style::default().fg(name_color)),
                 Span::styled(format!("  {}", detail), Style::default().fg(detail_color)),
-            ])));
+            ];
+            spans.extend(state_spans);
+            items.push(ListItem::new(Line::from(spans)));
         }
 
         let list = List::new(items)
@@ -1530,12 +1547,29 @@ impl<'a> App<'a> {
                 " ⊕ new".to_string()
             };
 
-            items.push(ListItem::new(Line::from(vec![
+            // State badge from AzDo
+            let state_spans = task
+                .work_item
+                .as_ref()
+                .filter(|wi| !wi.state.is_empty())
+                .map(|wi| {
+                    let (label, color) = state_badge(&wi.state);
+                    vec![
+                        Span::styled(" [", Style::default().fg(Gruvbox::GRAY)),
+                        Span::styled(label, Style::default().fg(color)),
+                        Span::styled("]", Style::default().fg(Gruvbox::GRAY)),
+                    ]
+                })
+                .unwrap_or_default();
+
+            let mut spans = vec![
                 Span::raw("  "),
                 Span::styled(format!("{} ", icon), Style::default().fg(name_color)),
                 Span::styled(&task.name, Style::default().fg(name_color)),
                 Span::styled(suffix, Style::default().fg(Gruvbox::GREEN)),
-            ])));
+            ];
+            spans.extend(state_spans);
+            items.push(ListItem::new(Line::from(spans)));
         }
 
         let list = List::new(items)
@@ -1689,5 +1723,18 @@ fn truncate(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         format!("{}…", &s[..max - 1])
+    }
+}
+
+/// Return (label, color) for an AzDo work item state
+fn state_badge(state: &str) -> (&str, ratatui::style::Color) {
+    match state {
+        "New" => ("NEW", Gruvbox::BLUE),
+        "Active" => ("ACT", Gruvbox::GREEN),
+        "Resolved" => ("RES", Gruvbox::AQUA),
+        "Closed" => ("CLS", Gruvbox::GRAY),
+        "Removed" => ("REM", Gruvbox::GRAY),
+        _ if state.is_empty() => ("", Gruvbox::GRAY),
+        _ => (state.split_at(3.min(state.len())).0, Gruvbox::YELLOW),
     }
 }
