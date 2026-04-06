@@ -1,0 +1,39 @@
+# tcs - tmux copilot sessions
+# User configuration file
+# Copy to ~/.config/tcs/config.toml and customize
+
+[copilot]
+# Path to the copilot binary
+bin = "copilot"
+
+# Always launch with --yolo (auto-approve all actions)
+yolo = true
+
+# Default agent to use (user-specific, NOT a project default)
+# default_agent = "-nn-bank-siba-ai-agents:siba-developer-agent"
+
+# Extra flags to pass to copilot on every launch
+# extra_flags = ["--add-dir", "~/code/siba"]
+
+# Auto-launch copilot when creating new windows
+auto_launch = true
+
+# Prompt template for context injection
+# Placeholders: {type}, {id}, {title}, {description}
+prompt_template = "I'm working on {type} #{id}: {title}"
+
+# [azdo]
+# organization = "my-org"
+# project = "My-Project"
+# team = "my-team"
+#
+# [azdo.filters]
+# iteration = "current"
+# states = ["New", "Active", "Resolved"]
+# area_paths = []
+
+[keybindings]
+# Keys used with tmux prefix (e.g., prefix + F)
+feature_selector = "F"
+task_selector = "T"
+dashboard = "D"

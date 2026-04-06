@@ -1,0 +1,134 @@
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+
+mod azdo;
+mod config;
+mod copilot;
+mod store;
+mod tmux;
+mod tui;
+mod wizard;
+
+#[derive(Parser)]
+#[command(name = "tcs", about = "tmux session manager for AI coding agents")]
+#[command(version, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Open the feature selector (default when no subcommand)
+    Open,
+    /// Open the task selector for the current session's feature
+    Task,
+    /// Show the session dashboard
+    Dash,
+    /// List active sessions
+    #[command(name = "ls")]
+    List,
+    /// Create a free session (no AzDo link)
+    Free {
+        /// Session name
+        name: String,
+    },
+    /// Show or edit configuration
+    Config,
+    /// Run the setup wizard to configure AzDo connection
+    Setup,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("tcs=info".parse()?),
+        )
+        .with_target(false)
+        .init();
+
+    let cli = Cli::parse();
+    let mut cfg = config::AppConfig::load()?;
+
+    // Auto-trigger setup if AzDo not configured and using a command that needs it
+    let needs_azdo = matches!(
+        cli.command.as_ref().unwrap_or(&Commands::Open),
+        Commands::Open | Commands::Task
+    );
+    if needs_azdo && cfg.azdo.is_none() {
+        eprintln!("⚠ AzDo not configured. Run `tcs setup` to connect to Azure DevOps.\n");
+    }
+
+    match cli.command.unwrap_or(Commands::Open) {
+        Commands::Open => tui::run_feature_selector(&cfg).await,
+        Commands::Task => tui::run_task_selector(&cfg).await,
+        Commands::Dash => tui::run_dashboard(&cfg).await,
+        Commands::List => list_sessions().await,
+        Commands::Free { name } => create_free_session(&cfg, &name).await,
+        Commands::Config => show_config(&cfg),
+        Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
+    }
+}
+
+async fn list_sessions() -> Result<()> {
+    let sessions = tmux::list_sessions()?;
+    if sessions.is_empty() {
+        println!("No active tmux sessions.");
+        return Ok(());
+    }
+    for s in &sessions {
+        println!(
+            "  {} ({} windows){}",
+            s.name,
+            s.window_count,
+            if s.attached { " *" } else { "" }
+        );
+    }
+    Ok(())
+}
+
+async fn create_free_session(cfg: &config::AppConfig, name: &str) -> Result<()> {
+    let store = store::Store::open()?;
+    let session_name = name.to_string();
+    if tmux::session_exists(&session_name)? {
+        println!("Session '{}' already exists, switching...", session_name);
+        tmux::switch_session(&session_name)?;
+    } else {
+        tmux::create_session(&session_name, None)?;
+
+        store.save_session_mapping(&store::SessionMapping {
+            session_name: session_name.clone(),
+            work_item_id: None,
+            work_item_title: None,
+            work_item_type: Some("Free".to_string()),
+            template: None,
+            created_at: String::new(),
+        })?;
+
+        println!("Created session '{}'", session_name);
+
+        if cfg.copilot.auto_launch {
+            copilot::launch_in_current_pane(cfg, None)?;
+        }
+    }
+    Ok(())
+}
+
+fn show_config(cfg: &config::AppConfig) -> Result<()> {
+    println!("Configuration:");
+    println!("  Copilot binary: {}", cfg.copilot.bin);
+    println!("  Yolo mode: {}", cfg.copilot.yolo);
+    if let Some(ref agent) = cfg.copilot.default_agent {
+        println!("  Default agent: {}", agent);
+    }
+    if let Some(ref azdo) = cfg.azdo {
+        println!("  AzDo org: {}", azdo.organization);
+        println!("  AzDo project: {}", azdo.project);
+    } else {
+        println!("  AzDo: not configured");
+    }
+    println!("\n  Config file: {}", config::config_path().display());
+    Ok(())
+}

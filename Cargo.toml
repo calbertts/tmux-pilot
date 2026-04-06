@@ -1,0 +1,56 @@
+[package]
+name = "tcs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "tmux session manager for AI coding agents with Azure DevOps integration"
+license = "MIT"
+keywords = ["tmux", "tui", "copilot", "azure-devops", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "tcs"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# TUI
+ratatui = { version = "0.29", features = ["crossterm"] }
+crossterm = "0.28"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Fuzzy matching
+nucleo-matcher = "0.3"
+
+# Error handling
+anyhow = "1"
+
+# SQLite (session persistence)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Directory utilities
+dirs = "6"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
