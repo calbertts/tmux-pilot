@@ -62,6 +62,8 @@ pub struct App<'a> {
     /// Maps visual task row → task index (None = section header)
     task_visual_map: Vec<Option<usize>>,
     current_session: Option<String>,
+    /// Parent work item for the current task view (used when session doesn't exist yet)
+    current_parent_work_item: Option<WorkItem>,
 
     // Dashboard state
     dashboard_sessions: Vec<DashboardEntry>,
@@ -173,6 +175,7 @@ impl<'a> App<'a> {
             task_filtered_indices: vec![],
             task_visual_map: vec![],
             current_session: None,
+            current_parent_work_item: None,
             dashboard_sessions: vec![],
             dashboard_list_state: ListState::default(),
             text_input: String::new(),
@@ -257,12 +260,14 @@ impl<'a> App<'a> {
             }
             View::TaskSelector => {
                 let session_name = self.current_session.clone().unwrap_or_default();
+                // Try SQLite mapping first, then fall back to parent work item from feature selector
                 let parent_id = self
                     .store
                     .get_session_mapping(&session_name)
                     .ok()
                     .flatten()
-                    .and_then(|m| m.work_item_id);
+                    .and_then(|m| m.work_item_id)
+                    .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id));
 
                 if let Some(pid) = parent_id {
                     // Check cache first
@@ -322,6 +327,23 @@ impl<'a> App<'a> {
                     .filter_map(|f| f.work_item.as_ref().map(|wi| wi.id))
                     .collect();
 
+                // Update state/description on existing local features from AzDo data
+                for wi in azdo_features.iter() {
+                    if let Some(feature) = self.features.iter_mut().find(|f| {
+                        f.work_item.as_ref().and_then(|w| w.id) == wi.id
+                    }) {
+                        if let Some(ref mut existing_wi) = feature.work_item {
+                            existing_wi.state = wi.state.clone();
+                            if existing_wi.description.is_none() {
+                                existing_wi.description.clone_from(&wi.description);
+                            }
+                            if existing_wi.acceptance_criteria.is_none() {
+                                existing_wi.acceptance_criteria.clone_from(&wi.acceptance_criteria);
+                            }
+                        }
+                    }
+                }
+
                 for wi in azdo_features {
                     if !existing_ids.contains(&wi.id) {
                         self.features.push(FeatureEntry {
@@ -374,6 +396,23 @@ impl<'a> App<'a> {
                     .iter()
                     .filter_map(|t| t.work_item.as_ref().map(|wi| wi.id))
                     .collect();
+
+                // Update state/description on existing local tasks from AzDo data
+                for wi in azdo_tasks.iter() {
+                    if let Some(task) = self.tasks.iter_mut().find(|t| {
+                        t.work_item.as_ref().and_then(|w| w.id) == wi.id
+                    }) {
+                        if let Some(ref mut existing_wi) = task.work_item {
+                            existing_wi.state = wi.state.clone();
+                            if existing_wi.description.is_none() {
+                                existing_wi.description.clone_from(&wi.description);
+                            }
+                            if existing_wi.acceptance_criteria.is_none() {
+                                existing_wi.acceptance_criteria.clone_from(&wi.acceptance_criteria);
+                            }
+                        }
+                    }
+                }
 
                 for wi in azdo_tasks {
                     if !existing_ids.contains(&wi.id) {
@@ -898,10 +937,13 @@ impl<'a> App<'a> {
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::FeatureSelector),
             KeyCode::Enter => self.select_feature()?,
             KeyCode::Char('o') => {
-                // Get the selected feature's session name
-                let session = self.feature_list_state.selected()
+                // Get the selected feature's session name and work item
+                let selected_feature = self.feature_list_state.selected()
                     .and_then(|sel| self.visual_map.get(sel).copied().flatten())
-                    .map(|idx| self.features[idx].name.clone());
+                    .map(|idx| self.features[idx].clone());
+                let session = selected_feature.as_ref().map(|f| f.name.clone());
+                let parent_wi = selected_feature.and_then(|f| f.work_item);
+                self.current_parent_work_item = parent_wi;
                 self.switch_to_view_with_session(View::TaskSelector, session)?;
             }
             KeyCode::Char('n') => {
@@ -1123,6 +1165,25 @@ impl<'a> App<'a> {
                     .clone()
                     .unwrap_or_else(|| "default".to_string());
 
+                // Ensure session exists — create it if needed (AzDo-only feature)
+                let session_exists = tmux::session_exists(&session).unwrap_or(false);
+                if !session_exists {
+                    tmux::create_session(&session, None)?;
+
+                    // Persist session mapping from parent work item
+                    let parent_wi = &self.current_parent_work_item;
+                    self.store.save_session_mapping(&SessionMapping {
+                        session_name: session.clone(),
+                        work_item_id: parent_wi.as_ref().and_then(|wi| wi.id),
+                        work_item_title: parent_wi.as_ref().map(|wi| wi.title.clone()),
+                        work_item_type: parent_wi
+                            .as_ref()
+                            .map(|wi| wi.work_item_type.to_string()),
+                        template: None,
+                        created_at: String::new(),
+                    })?;
+                }
+
                 if task.window_exists {
                     if let Some(win_idx) = task.window_index {
                         tmux::select_window(&session, win_idx)?;
@@ -1139,16 +1200,22 @@ impl<'a> App<'a> {
                         })
                         .unwrap_or_else(|| task.name.clone());
 
-                    tmux::create_window(&session, &win_name, None)?;
+                    if session_exists {
+                        tmux::create_window(&session, &win_name, None)?;
+                    } else {
+                        // Session just created — rename the default first window
+                        tmux::rename_window(&session, 1, &win_name)?;
+                    }
 
                     // Launch copilot with work item context
                     if self.cfg.copilot.auto_launch {
-                        copilot::launch_in_current_pane(self.cfg, task.work_item.as_ref())?;
+                        let target = format!("{}:{}", session, win_name);
+                        copilot::launch_in_target(self.cfg, &target, task.work_item.as_ref())?;
                     }
 
                     // Persist window mapping
                     self.store.save_window_mapping(&WindowMapping {
-                        session_name: session,
+                        session_name: session.clone(),
                         window_name: win_name,
                         work_item_id: task.work_item.as_ref().and_then(|wi| wi.id),
                         work_item_title: task
@@ -1163,6 +1230,8 @@ impl<'a> App<'a> {
                         window_type: "copilot".to_string(),
                     })?;
                 }
+
+                tmux::switch_session(&session)?;
                 self.running = false;
             }
         }
@@ -1390,12 +1459,8 @@ impl<'a> App<'a> {
                 .as_ref()
                 .filter(|wi| !wi.state.is_empty())
                 .map(|wi| {
-                    let (label, color) = state_badge(&wi.state);
-                    vec![
-                        Span::styled(" [", Style::default().fg(Gruvbox::GRAY)),
-                        Span::styled(label, Style::default().fg(color)),
-                        Span::styled("]", Style::default().fg(Gruvbox::GRAY)),
-                    ]
+                    let (symbol, color) = state_badge(&wi.state);
+                    vec![Span::styled(format!(" {}", symbol), Style::default().fg(color))]
                 })
                 .unwrap_or_default();
 
@@ -1553,12 +1618,8 @@ impl<'a> App<'a> {
                 .as_ref()
                 .filter(|wi| !wi.state.is_empty())
                 .map(|wi| {
-                    let (label, color) = state_badge(&wi.state);
-                    vec![
-                        Span::styled(" [", Style::default().fg(Gruvbox::GRAY)),
-                        Span::styled(label, Style::default().fg(color)),
-                        Span::styled("]", Style::default().fg(Gruvbox::GRAY)),
-                    ]
+                    let (symbol, color) = state_badge(&wi.state);
+                    vec![Span::styled(format!(" {}", symbol), Style::default().fg(color))]
                 })
                 .unwrap_or_default();
 
@@ -1726,15 +1787,15 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Return (label, color) for an AzDo work item state
+/// Return (emoji, color) for an AzDo work item state
 fn state_badge(state: &str) -> (&str, ratatui::style::Color) {
     match state {
-        "New" => ("NEW", Gruvbox::BLUE),
-        "Active" => ("ACT", Gruvbox::GREEN),
-        "Resolved" => ("RES", Gruvbox::AQUA),
-        "Closed" => ("CLS", Gruvbox::GRAY),
-        "Removed" => ("REM", Gruvbox::GRAY),
+        "New" => ("○", Gruvbox::BLUE),
+        "Active" => ("●", Gruvbox::GREEN),
+        "Resolved" => ("◉", Gruvbox::AQUA),
+        "Closed" => ("✔", Gruvbox::GRAY),
+        "Removed" => ("✘", Gruvbox::GRAY),
         _ if state.is_empty() => ("", Gruvbox::GRAY),
-        _ => (state.split_at(3.min(state.len())).0, Gruvbox::YELLOW),
+        _ => ("◌", Gruvbox::YELLOW),
     }
 }

@@ -21,16 +21,9 @@ pub fn build_command(cfg: &AppConfig, work_item: Option<&WorkItem>) -> String {
 
     // Add context prompt if we have a work item
     if let Some(wi) = work_item {
-        let mut prompt = build_prompt(&cfg.copilot.prompt_template, wi);
-        if cfg.copilot.plan_mode {
-            prompt = format!("[[PLAN]] {}", prompt);
-        }
+        let prompt = build_prompt(&cfg.copilot.prompt_template, wi);
         parts.push("-i".to_string());
         parts.push(format!("\"{}\"", prompt));
-    } else if cfg.copilot.plan_mode {
-        // Even without a work item, start in plan mode
-        parts.push("-i".to_string());
-        parts.push("\"[[PLAN]] Ready to plan. What should we work on?\"".to_string());
     }
 
     parts.join(" ")
@@ -103,7 +96,6 @@ mod tests {
                 extra_flags: vec!["--add-dir".to_string(), "~/code".to_string()],
                 auto_launch: true,
                 prompt_template: "Working on {type} #{id}: {title}".to_string(),
-                plan_mode: true,
             },
             azdo: None,
             keybindings: Default::default(),
@@ -129,7 +121,6 @@ mod tests {
         assert!(cmd.contains("--agent my-agent"));
         assert!(cmd.contains("--add-dir ~/code"));
         assert!(cmd.contains("-i"));
-        assert!(cmd.contains("[[PLAN]]"));
         assert!(cmd.contains("Bug #12345"));
         assert!(cmd.contains("Fix IBAN validation"));
     }
@@ -140,8 +131,7 @@ mod tests {
         let cmd = build_command(&cfg, None);
         assert!(cmd.contains("--yolo"));
         assert!(cmd.contains("--agent my-agent"));
-        assert!(cmd.contains("-i")); // plan_mode still adds -i
-        assert!(cmd.contains("[[PLAN]]"));
+        assert!(!cmd.contains("-i")); // no work item, no -i
     }
 
     #[test]
