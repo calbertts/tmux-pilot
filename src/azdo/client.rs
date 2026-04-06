@@ -203,6 +203,8 @@ struct WorkItemFields {
     assigned_to: Option<IdentityRef>,
     #[serde(rename = "System.Description")]
     description: Option<String>,
+    #[serde(rename = "Microsoft.VSTS.Common.AcceptanceCriteria")]
+    acceptance_criteria: Option<String>,
     #[serde(rename = "System.Parent")]
     parent: Option<u64>,
 }
@@ -293,7 +295,7 @@ fn query_child_items(azdo: &AzdoConfig, pat: &str, parent_id: u64) -> Result<Vec
 fn fetch_items_by_ids(base_url: &str, pat: &str, ids: &[u64]) -> Result<Vec<WorkItem>> {
     let ids_str: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
     let url = format!(
-        "{}/_apis/wit/workitems?ids={}&fields=System.Title,System.WorkItemType,System.State,System.AssignedTo,System.Description,System.Parent&api-version=7.1",
+        "{}/_apis/wit/workitems?ids={}&fields=System.Title,System.WorkItemType,System.State,System.AssignedTo,System.Description,Microsoft.VSTS.Common.AcceptanceCriteria,System.Parent&api-version=7.1",
         base_url,
         ids_str.join(",")
     );
@@ -309,7 +311,8 @@ fn fetch_items_by_ids(base_url: &str, pat: &str, ids: &[u64]) -> Result<Vec<Work
             work_item_type: parse_type(&wi.fields.work_item_type),
             state: wi.fields.state,
             assigned_to: wi.fields.assigned_to.and_then(|a| a.display_name),
-            description: wi.fields.description,
+            description: wi.fields.description.map(|d| strip_html(&d)),
+            acceptance_criteria: wi.fields.acceptance_criteria.map(|a| strip_html(&a)),
             parent_id: wi.fields.parent,
         })
         .collect())
@@ -323,4 +326,39 @@ fn parse_type(s: &str) -> WorkItemType {
         "Task" => WorkItemType::Task,
         _ => WorkItemType::Free,
     }
+}
+
+/// Strip HTML tags and decode common entities → plain text for copilot context
+fn strip_html(html: &str) -> String {
+    let mut result = html.to_string();
+    // Convert block elements to newlines
+    let block_tags = ["<br>", "<br/>", "<br />", "</p>", "</div>", "</li>", "</tr>"];
+    for tag in block_tags {
+        result = result.replace(tag, "\n");
+    }
+    // List items get a dash prefix
+    result = result.replace("<li>", "- ");
+    // Strip all remaining HTML tags
+    let mut out = String::with_capacity(result.len());
+    let mut in_tag = false;
+    for ch in result.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
+    }
+    // Decode common HTML entities
+    out = out.replace("&amp;", "&");
+    out = out.replace("&lt;", "<");
+    out = out.replace("&gt;", ">");
+    out = out.replace("&quot;", "\"");
+    out = out.replace("&#39;", "'");
+    out = out.replace("&nbsp;", " ");
+    // Collapse multiple blank lines
+    while out.contains("\n\n\n") {
+        out = out.replace("\n\n\n", "\n\n");
+    }
+    out.trim().to_string()
 }

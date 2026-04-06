@@ -32,8 +32,10 @@ pub struct CopilotConfig {
     /// Auto-launch copilot when creating new windows
     pub auto_launch: bool,
     /// Prompt template for context injection
-    /// Placeholders: {type}, {id}, {title}, {description}
+    /// Placeholders: {type}, {id}, {title}, {description}, {acceptance_criteria}
     pub prompt_template: String,
+    /// Always start copilot in plan mode (prepends [[PLAN]] to prompt)
+    pub plan_mode: bool,
 }
 
 impl Default for CopilotConfig {
@@ -44,7 +46,8 @@ impl Default for CopilotConfig {
             default_agent: None,
             extra_flags: vec![],
             auto_launch: true,
-            prompt_template: "I'm working on {type} #{id}: {title}".to_string(),
+            prompt_template: "I'm going to work on {type} #{id}: {title}\n\nDescription:\n{description}\n\nAcceptance Criteria:\n{acceptance_criteria}\n\nDon't take any action yet. Just acknowledge this context.".to_string(),
+            plan_mode: true,
         }
     }
 }
@@ -124,6 +127,7 @@ pub struct WorkItem {
     pub state: String,
     pub assigned_to: Option<String>,
     pub description: Option<String>,
+    pub acceptance_criteria: Option<String>,
     pub parent_id: Option<u64>,
 }
 

@@ -21,9 +21,16 @@ pub fn build_command(cfg: &AppConfig, work_item: Option<&WorkItem>) -> String {
 
     // Add context prompt if we have a work item
     if let Some(wi) = work_item {
-        let prompt = build_prompt(&cfg.copilot.prompt_template, wi);
+        let mut prompt = build_prompt(&cfg.copilot.prompt_template, wi);
+        if cfg.copilot.plan_mode {
+            prompt = format!("[[PLAN]] {}", prompt);
+        }
         parts.push("-i".to_string());
         parts.push(format!("\"{}\"", prompt));
+    } else if cfg.copilot.plan_mode {
+        // Even without a work item, start in plan mode
+        parts.push("-i".to_string());
+        parts.push("\"[[PLAN]] Ready to plan. What should we work on?\"".to_string());
     }
 
     parts.join(" ")
@@ -37,8 +44,16 @@ fn build_prompt(template: &str, wi: &WorkItem) -> String {
     prompt = prompt.replace("{title}", &wi.title);
     prompt = prompt.replace(
         "{description}",
-        wi.description.as_deref().unwrap_or(""),
+        wi.description.as_deref().unwrap_or("(no description)"),
     );
+    prompt = prompt.replace(
+        "{acceptance_criteria}",
+        wi.acceptance_criteria.as_deref().unwrap_or("(none)"),
+    );
+    // Escape double quotes for shell safety
+    prompt = prompt.replace('"', "'");
+    // Collapse newlines to spaces for -i flag (single line)
+    prompt = prompt.replace('\n', " \\n ");
     prompt
 }
 
@@ -88,6 +103,7 @@ mod tests {
                 extra_flags: vec!["--add-dir".to_string(), "~/code".to_string()],
                 auto_launch: true,
                 prompt_template: "Working on {type} #{id}: {title}".to_string(),
+                plan_mode: true,
             },
             azdo: None,
             keybindings: Default::default(),
@@ -103,7 +119,8 @@ mod tests {
             work_item_type: WorkItemType::Bug,
             state: "Active".to_string(),
             assigned_to: None,
-            description: None,
+            description: Some("The IBAN validation fails for NL accounts".to_string()),
+            acceptance_criteria: Some("All NL IBANs pass validation".to_string()),
             parent_id: None,
         };
 
@@ -112,6 +129,7 @@ mod tests {
         assert!(cmd.contains("--agent my-agent"));
         assert!(cmd.contains("--add-dir ~/code"));
         assert!(cmd.contains("-i"));
+        assert!(cmd.contains("[[PLAN]]"));
         assert!(cmd.contains("Bug #12345"));
         assert!(cmd.contains("Fix IBAN validation"));
     }
@@ -122,7 +140,8 @@ mod tests {
         let cmd = build_command(&cfg, None);
         assert!(cmd.contains("--yolo"));
         assert!(cmd.contains("--agent my-agent"));
-        assert!(!cmd.contains("-i"));
+        assert!(cmd.contains("-i")); // plan_mode still adds -i
+        assert!(cmd.contains("[[PLAN]]"));
     }
 
     #[test]

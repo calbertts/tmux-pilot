@@ -2,7 +2,7 @@ use std::io;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind, MouseButton},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -75,6 +75,9 @@ pub struct App<'a> {
 
     // Status message
     status_msg: Option<String>,
+
+    // Layout area of the main list (for mouse click mapping)
+    list_area: Rect,
 
     // Async loading state
     loading: bool,
@@ -173,6 +176,7 @@ impl<'a> App<'a> {
             text_input_label: String::new(),
             text_input_action: TextInputAction::None,
             status_msg: None,
+            list_area: Rect::default(),
             loading: false,
             spinner_tick: 0,
             azdo_rx: None,
@@ -182,7 +186,11 @@ impl<'a> App<'a> {
     pub async fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        )?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
@@ -195,7 +203,11 @@ impl<'a> App<'a> {
         let result = self.event_loop(&mut terminal).await;
 
         disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            crossterm::event::DisableMouseCapture
+        )?;
         terminal.show_cursor()?;
 
         result
@@ -426,6 +438,7 @@ impl<'a> App<'a> {
                             state: String::new(),
                             assigned_to: None,
                             description: None,
+                            acceptance_criteria: None,
                             parent_id: None,
                         })
                     }),
@@ -469,7 +482,11 @@ impl<'a> App<'a> {
     }
 
     fn load_local_tasks(&mut self) -> Result<()> {
-        let session_name = tmux::current_session_name().unwrap_or_default();
+        // Use pre-set session (from feature selector 'o') or fall back to tmux current
+        let session_name = self
+            .current_session
+            .clone()
+            .unwrap_or_else(|| tmux::current_session_name().unwrap_or_default());
         self.current_session = Some(session_name.clone());
 
         let windows = tmux::list_windows(&session_name).unwrap_or_default();
@@ -495,6 +512,7 @@ impl<'a> App<'a> {
                         state: String::new(),
                         assigned_to: None,
                         description: None,
+                        acceptance_criteria: None,
                         parent_id: None,
                     })
                 });
@@ -613,10 +631,16 @@ impl<'a> App<'a> {
             terminal.draw(|f| self.render(f))?;
 
             if event::poll(std::time::Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
-                        self.handle_key(key)?;
+                match event::read()? {
+                    Event::Key(key) => {
+                        if key.kind == KeyEventKind::Press {
+                            self.handle_key(key)?;
+                        }
                     }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse(mouse)?;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -651,12 +675,81 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) -> Result<()> {
+        if self.input_mode == InputMode::TextInput {
+            return Ok(());
+        }
+
+        match mouse.kind {
+            MouseEventKind::ScrollUp => {
+                self.move_selection_up(&self.view.clone());
+            }
+            MouseEventKind::ScrollDown => {
+                self.move_selection_down(&self.view.clone());
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                let row = mouse.row;
+                let list_offset = self.list_area.y;
+                if row >= list_offset && row < list_offset + self.list_area.height {
+                    let clicked_row = (row - list_offset) as usize;
+                    // Offset by current scroll position
+                    let scroll_offset = self.current_scroll_offset();
+                    let target_row = clicked_row + scroll_offset;
+                    self.select_row_if_valid(target_row);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                // double-click handled by terminal, single click selects
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Get the current scroll offset from list state
+    fn current_scroll_offset(&self) -> usize {
+        match self.view {
+            View::FeatureSelector => self.feature_list_state.offset(),
+            View::TaskSelector => self.task_list_state.offset(),
+            View::Dashboard => self.dashboard_list_state.offset(),
+        }
+    }
+
+    /// Select a row if it's a valid selectable item
+    fn select_row_if_valid(&mut self, row: usize) {
+        match self.view {
+            View::FeatureSelector => {
+                if row < self.visual_map.len() && self.visual_map[row].is_some() {
+                    self.feature_list_state.select(Some(row));
+                }
+            }
+            View::TaskSelector => {
+                if row < self.task_visual_map.len() && self.task_visual_map[row].is_some() {
+                    self.task_list_state.select(Some(row));
+                }
+            }
+            View::Dashboard => {
+                if row < self.dashboard_sessions.len() {
+                    self.dashboard_list_state.select(Some(row));
+                }
+            }
+        }
+    }
+
     /// Switch to a different view, reloading its data
     fn switch_to_view(&mut self, target: View) -> Result<()> {
+        self.switch_to_view_with_session(target, None)
+    }
+
+    /// Switch to a different view, optionally setting the session context
+    fn switch_to_view_with_session(&mut self, target: View, session: Option<String>) -> Result<()> {
         self.view = target;
         self.loading = false;
         self.status_msg = None;
         self.azdo_rx = None;
+        if let Some(name) = session {
+            self.current_session = Some(name);
+        }
         self.load_local_data()?;
         self.start_azdo_fetch();
         Ok(())
@@ -704,7 +797,11 @@ impl<'a> App<'a> {
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::FeatureSelector),
             KeyCode::Enter => self.select_feature()?,
             KeyCode::Char('o') => {
-                self.switch_to_view(View::TaskSelector)?;
+                // Get the selected feature's session name
+                let session = self.feature_list_state.selected()
+                    .and_then(|sel| self.visual_map.get(sel).copied().flatten())
+                    .map(|idx| self.features[idx].name.clone());
+                self.switch_to_view_with_session(View::TaskSelector, session)?;
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::TextInput;
@@ -1202,6 +1299,7 @@ impl<'a> App<'a> {
             )
             .highlight_symbol("▸ ");
 
+        self.list_area = chunks[2];
         f.render_stateful_widget(list, chunks[2], &mut self.feature_list_state);
 
         // Bottom bar: help + status
@@ -1347,6 +1445,7 @@ impl<'a> App<'a> {
             )
             .highlight_symbol("▸ ");
 
+        self.list_area = chunks[3];
         f.render_stateful_widget(list, chunks[3], &mut self.task_list_state);
 
         // Bottom bar
@@ -1465,6 +1564,7 @@ impl<'a> App<'a> {
             )
             .highlight_symbol("▸ ");
 
+        self.list_area = chunks[2];
         f.render_stateful_widget(list, chunks[2], &mut self.dashboard_list_state);
 
         let help = Line::from(vec![
