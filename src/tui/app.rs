@@ -83,6 +83,9 @@ pub struct App<'a> {
     loading: bool,
     spinner_tick: usize,
     azdo_rx: Option<oneshot::Receiver<AzdoFetchResult>>,
+
+    // Vim-style: pending 'g' for gg combo
+    pending_g: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -180,6 +183,7 @@ impl<'a> App<'a> {
             loading: false,
             spinner_tick: 0,
             azdo_rx: None,
+            pending_g: false,
         }
     }
 
@@ -650,7 +654,20 @@ impl<'a> App<'a> {
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
         // Handle text input mode
         if self.input_mode == InputMode::TextInput {
+            self.pending_g = false;
             return self.handle_text_input_key(key.code);
+        }
+
+        // Handle 'gg' combo: second 'g' after pending
+        if self.pending_g {
+            self.pending_g = false;
+            if key.code == KeyCode::Char('g') {
+                self.jump_to_first();
+                return Ok(());
+            }
+            // Not 'g' — the first 'g' was just a filter char, process both
+            // First 'g' was consumed, so we add it to filter if applicable
+            self.dispatch_char_to_filter('g');
         }
 
         // Ctrl+O: toggle between Feature ↔ Task selector from any view
@@ -660,6 +677,18 @@ impl<'a> App<'a> {
                 View::TaskSelector => View::FeatureSelector,
                 View::Dashboard => View::FeatureSelector,
             });
+        }
+
+        // G (shift+g): jump to last item
+        if key.code == KeyCode::Char('G') {
+            self.jump_to_last();
+            return Ok(());
+        }
+
+        // First 'g': start gg combo (only in views with filter, not in dashboard)
+        if key.code == KeyCode::Char('g') {
+            self.pending_g = true;
+            return Ok(());
         }
 
         match key.code {
@@ -673,6 +702,68 @@ impl<'a> App<'a> {
             },
         }
         Ok(())
+    }
+
+    /// Jump selection to the first selectable item
+    fn jump_to_first(&mut self) {
+        match self.view {
+            View::FeatureSelector => {
+                self.feature_list_state
+                    .select(self.first_selectable_row());
+            }
+            View::TaskSelector => {
+                self.task_list_state
+                    .select(self.first_selectable_task_row());
+            }
+            View::Dashboard => {
+                if !self.dashboard_sessions.is_empty() {
+                    self.dashboard_list_state.select(Some(0));
+                }
+            }
+        }
+    }
+
+    /// Jump selection to the last selectable item
+    fn jump_to_last(&mut self) {
+        match self.view {
+            View::FeatureSelector => {
+                let last = self.visual_map.iter().rposition(|e| e.is_some());
+                if let Some(pos) = last {
+                    self.feature_list_state.select(Some(pos));
+                }
+            }
+            View::TaskSelector => {
+                let last = self.task_visual_map.iter().rposition(|e| e.is_some());
+                if let Some(pos) = last {
+                    self.task_list_state.select(Some(pos));
+                }
+            }
+            View::Dashboard => {
+                let len = self.dashboard_sessions.len();
+                if len > 0 {
+                    self.dashboard_list_state.select(Some(len - 1));
+                }
+            }
+        }
+    }
+
+    /// Push a char into the current view's filter (used when pending_g falls through)
+    fn dispatch_char_to_filter(&mut self, c: char) {
+        match self.view {
+            View::FeatureSelector => {
+                self.feature_filter.push(c);
+                self.update_feature_filter();
+                self.feature_list_state
+                    .select(self.first_selectable_row());
+            }
+            View::TaskSelector => {
+                self.task_filter.push(c);
+                self.update_task_filter();
+                self.task_list_state
+                    .select(self.first_selectable_task_row());
+            }
+            View::Dashboard => {} // no filter in dashboard
+        }
     }
 
     fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) -> Result<()> {
@@ -743,7 +834,9 @@ impl<'a> App<'a> {
 
     /// Switch to a different view, optionally setting the session context
     fn switch_to_view_with_session(&mut self, target: View, session: Option<String>) -> Result<()> {
-        self.view = target;
+        let prev_feature_sel = self.feature_list_state.selected();
+        let prev_view = self.view.clone();
+        self.view = target.clone();
         self.loading = false;
         self.status_msg = None;
         self.azdo_rx = None;
@@ -751,6 +844,14 @@ impl<'a> App<'a> {
             self.current_session = Some(name);
         }
         self.load_local_data()?;
+        // Restore feature selection when returning to FeatureSelector
+        if target == View::FeatureSelector && prev_view != View::FeatureSelector {
+            if let Some(sel) = prev_feature_sel {
+                if sel < self.visual_map.len() && self.visual_map[sel].is_some() {
+                    self.feature_list_state.select(Some(sel));
+                }
+            }
+        }
         self.start_azdo_fetch();
         Ok(())
     }
