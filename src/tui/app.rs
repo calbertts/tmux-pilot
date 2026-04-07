@@ -1375,7 +1375,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // search
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(1), // help/status
+                Constraint::Length(2), // help + legend
             ])
             .split(area);
 
@@ -1486,7 +1486,12 @@ impl<'a> App<'a> {
         f.render_stateful_widget(list, chunks[2], &mut self.feature_list_state);
 
         // Bottom bar: help + status
-        let bottom = if let Some(ref msg) = self.status_msg {
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .split(chunks[3]);
+
+        let help_line = if let Some(ref msg) = self.status_msg {
             let frame = if self.loading {
                 SPINNER[self.spinner_tick % SPINNER.len()]
             } else {
@@ -1510,7 +1515,8 @@ impl<'a> App<'a> {
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
             ])
         };
-        f.render_widget(Paragraph::new(bottom), chunks[3]);
+        f.render_widget(Paragraph::new(help_line), bottom_chunks[0]);
+        render_legend(f, bottom_chunks[1], false);
     }
 
     fn render_task_selector(&mut self, f: &mut Frame, area: Rect) {
@@ -1521,7 +1527,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // search
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(1), // help/status
+                Constraint::Length(2), // help/status + legend
             ])
             .split(area);
 
@@ -1645,7 +1651,12 @@ impl<'a> App<'a> {
         f.render_stateful_widget(list, chunks[3], &mut self.task_list_state);
 
         // Bottom bar
-        let bottom = if let Some(ref msg) = self.status_msg {
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .split(chunks[4]);
+
+        let help_line = if let Some(ref msg) = self.status_msg {
             let frame = if self.loading {
                 SPINNER[self.spinner_tick % SPINNER.len()]
             } else {
@@ -1671,7 +1682,8 @@ impl<'a> App<'a> {
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
             ])
         };
-        f.render_widget(Paragraph::new(bottom), chunks[4]);
+        f.render_widget(Paragraph::new(help_line), bottom_chunks[0]);
+        render_legend(f, bottom_chunks[1], true);
     }
 
     fn render_dashboard(&mut self, f: &mut Frame, area: Rect) {
@@ -1681,7 +1693,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // title
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(1), // help
+                Constraint::Length(2), // help + legend
             ])
             .split(area);
 
@@ -1763,6 +1775,11 @@ impl<'a> App<'a> {
         self.list_area = chunks[2];
         f.render_stateful_widget(list, chunks[2], &mut self.dashboard_list_state);
 
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)])
+            .split(chunks[3]);
+
         let help = Line::from(vec![
             Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
             Span::styled(" move  ", Style::default().fg(Gruvbox::GRAY)),
@@ -1775,7 +1792,24 @@ impl<'a> App<'a> {
             Span::styled("q", Style::default().fg(Gruvbox::FG)),
             Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
         ]);
-        f.render_widget(Paragraph::new(help), chunks[3]);
+        f.render_widget(Paragraph::new(help), bottom_chunks[0]);
+
+        // Dashboard legend: just attached indicator
+        let legend_spans = vec![
+            Span::styled("▶", Style::default().fg(Gruvbox::GREEN)),
+            Span::styled(" attached  ", Style::default().fg(Gruvbox::GRAY)),
+            Span::styled("#", Style::default().fg(Gruvbox::BLUE)),
+            Span::styled(" linked to azdo", Style::default().fg(Gruvbox::GRAY)),
+        ];
+        let text_width: usize = legend_spans.iter().map(|s| s.content.chars().count()).sum();
+        let padding = if bottom_chunks[1].width as usize > text_width + 2 {
+            bottom_chunks[1].width as usize - text_width - 2
+        } else {
+            0
+        };
+        let mut final_spans = vec![Span::raw(" ".repeat(padding))];
+        final_spans.extend(legend_spans);
+        f.render_widget(Paragraph::new(Line::from(final_spans)), bottom_chunks[1]);
     }
 }
 
@@ -1798,4 +1832,49 @@ fn state_badge(state: &str) -> (&str, ratatui::style::Color) {
         _ if state.is_empty() => ("", Gruvbox::GRAY),
         _ => ("◌", Gruvbox::YELLOW),
     }
+}
+
+/// Build a right-aligned legend line showing state symbols and item type icons
+fn render_legend(f: &mut Frame, area: Rect, show_types: bool) {
+    let mut spans: Vec<Span> = vec![];
+
+    // State symbols
+    spans.push(Span::styled("○", Style::default().fg(Gruvbox::BLUE)));
+    spans.push(Span::styled("new ", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("●", Style::default().fg(Gruvbox::GREEN)));
+    spans.push(Span::styled("active ", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("◉", Style::default().fg(Gruvbox::AQUA)));
+    spans.push(Span::styled("resolved ", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("✔", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("closed", Style::default().fg(Gruvbox::GRAY)));
+
+    if show_types {
+        spans.push(Span::styled("  │  ", Style::default().fg(Gruvbox::DARK_GRAY)));
+        spans.push(Span::styled("📖", Style::default()));
+        spans.push(Span::styled("story ", Style::default().fg(Gruvbox::GRAY)));
+        spans.push(Span::styled("🐛", Style::default()));
+        spans.push(Span::styled("bug ", Style::default().fg(Gruvbox::GRAY)));
+        spans.push(Span::styled("✅", Style::default()));
+        spans.push(Span::styled("task", Style::default().fg(Gruvbox::GRAY)));
+    }
+
+    spans.push(Span::styled("  │  ", Style::default().fg(Gruvbox::DARK_GRAY)));
+    spans.push(Span::styled("⊕", Style::default().fg(Gruvbox::GREEN)));
+    spans.push(Span::styled("new in azdo", Style::default().fg(Gruvbox::GRAY)));
+
+    // Right-align
+    let text_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    let padding = if area.width as usize > text_width + 2 {
+        area.width as usize - text_width - 2
+    } else {
+        0
+    };
+
+    let mut final_spans = vec![Span::raw(" ".repeat(padding))];
+    final_spans.extend(spans);
+
+    f.render_widget(
+        Paragraph::new(Line::from(final_spans)),
+        area,
+    );
 }
