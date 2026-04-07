@@ -2,7 +2,7 @@ use std::io;
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind, MouseButton},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind, MouseButton},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -742,8 +742,8 @@ impl<'a> App<'a> {
                 self.running = false;
             }
             _ => match self.view {
-                View::FeatureSelector => self.handle_feature_key(key.code)?,
-                View::TaskSelector => self.handle_task_key(key.code)?,
+                View::FeatureSelector => self.handle_feature_key(key)?,
+                View::TaskSelector => self.handle_task_key(key)?,
                 View::TaskDetail => self.handle_detail_key(key.code)?,
                 View::Dashboard => self.handle_dashboard_key(key.code)?,
             },
@@ -945,8 +945,16 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn handle_feature_key(&mut self, code: KeyCode) -> Result<()> {
-        match code {
+    fn handle_feature_key(&mut self, key: KeyEvent) -> Result<()> {
+        // Ctrl+N: create new free session
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('n') {
+            self.input_mode = InputMode::TextInput;
+            self.text_input_label = "New session name".to_string();
+            self.text_input_action = TextInputAction::CreateFreeSession;
+            return Ok(());
+        }
+
+        match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.move_selection_up(&View::FeatureSelector),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::FeatureSelector),
             KeyCode::Enter => self.select_feature()?,
@@ -959,11 +967,6 @@ impl<'a> App<'a> {
                 let parent_wi = selected_feature.and_then(|f| f.work_item);
                 self.current_parent_work_item = parent_wi;
                 self.switch_to_view_with_session(View::TaskSelector, session)?;
-            }
-            KeyCode::Char('n') => {
-                self.input_mode = InputMode::TextInput;
-                self.text_input_label = "New session name".to_string();
-                self.text_input_action = TextInputAction::CreateFreeSession;
             }
             KeyCode::Backspace => {
                 self.feature_filter.pop();
@@ -982,8 +985,21 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn handle_task_key(&mut self, code: KeyCode) -> Result<()> {
-        match code {
+    fn handle_task_key(&mut self, key: KeyEvent) -> Result<()> {
+        // Ctrl+N: create new copilot window
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('n') {
+            self.do_create_copilot_window(None)?;
+            return Ok(());
+        }
+        // Ctrl+T: create named terminal window
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('t') {
+            self.input_mode = InputMode::TextInput;
+            self.text_input_label = "New terminal window name".to_string();
+            self.text_input_action = TextInputAction::CreateNamedWindow;
+            return Ok(());
+        }
+
+        match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.move_selection_up(&View::TaskSelector),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::TaskSelector),
             KeyCode::Enter => self.select_task()?,
@@ -998,15 +1014,6 @@ impl<'a> App<'a> {
                         }
                     }
                 }
-            }
-            KeyCode::Char('c') => {
-                // Create copilot window directly
-                self.do_create_copilot_window(None)?;
-            }
-            KeyCode::Char('t') => {
-                self.input_mode = InputMode::TextInput;
-                self.text_input_label = "New terminal window name".to_string();
-                self.text_input_action = TextInputAction::CreateNamedWindow;
             }
             KeyCode::Backspace => {
                 self.task_filter.pop();
@@ -1405,11 +1412,11 @@ impl<'a> App<'a> {
         f.render_widget(Clear, popup_area);
 
         let input = Paragraph::new(format!("{}_", self.text_input))
-            .style(Style::default().fg(Gruvbox::FG_BRIGHT).bg(Gruvbox::BG))
+            .style(Style::default().fg(Gruvbox::FG_BRIGHT).bg(Gruvbox::BG_POPUP))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Gruvbox::ORANGE))
+                    .border_style(Style::default().fg(Gruvbox::ORANGE).bg(Gruvbox::BG_POPUP))
                     .title(format!(" {} ", self.text_input_label))
                     .title_style(
                         Style::default()
@@ -1559,7 +1566,7 @@ impl<'a> App<'a> {
                 Span::styled(" open  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("o", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" tasks  ", Style::default().fg(Gruvbox::GRAY)),
-                Span::styled("n", Style::default().fg(Gruvbox::FG)),
+                Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" new  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
@@ -1721,9 +1728,9 @@ impl<'a> App<'a> {
                 Span::styled(" go  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("o", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
-                Span::styled("c", Style::default().fg(Gruvbox::FG)),
+                Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +copilot  ", Style::default().fg(Gruvbox::GRAY)),
-                Span::styled("t", Style::default().fg(Gruvbox::FG)),
+                Span::styled("^t", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +term  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),

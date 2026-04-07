@@ -7,6 +7,7 @@ impl Gruvbox {
     // Background
     pub const BG: Color = Color::Rgb(40, 40, 40);        // #282828 (colour235)
     pub const BG_SOFT: Color = Color::Rgb(50, 48, 47);   // #32302f
+    pub const BG_POPUP: Color = Color::Rgb(60, 56, 54);  // #3c3836 — popup/dialog bg
 
     // Foreground
     pub const FG: Color = Color::Rgb(168, 153, 132);     // #a89984 (colour246)
