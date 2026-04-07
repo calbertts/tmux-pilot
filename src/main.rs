@@ -10,6 +10,8 @@ mod tui;
 mod watcher;
 mod wizard;
 
+use store::Store;
+
 #[derive(Parser)]
 #[command(name = "tcs", about = "tmux session manager for AI coding agents")]
 #[command(version, long_about = None)]
@@ -95,6 +97,9 @@ enum Commands {
         /// Clean up dead watcher entries
         #[arg(long)]
         cleanup: bool,
+        /// Open interactive TUI
+        #[arg(long)]
+        tui: bool,
     },
     /// Show or edit configuration
     Config,
@@ -151,7 +156,7 @@ async fn main() -> Result<()> {
             interval,
             foreground,
         } => cmd_watch(&watcher_type, id, project_key, script, interval, foreground),
-        Commands::Watchers { stop, cleanup } => cmd_watchers(stop, cleanup),
+        Commands::Watchers { stop, cleanup, tui: show_tui } => cmd_watchers(stop, cleanup, show_tui),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
     }
@@ -402,12 +407,16 @@ fn cmd_watch(
     }
 }
 
-fn cmd_watchers(stop: Option<String>, cleanup: bool) -> Result<()> {
+fn cmd_watchers(stop: Option<String>, cleanup: bool, show_tui: bool) -> Result<()> {
     if let Some(id) = stop {
         return watcher::stop_watcher(&id);
     }
     if cleanup {
         return watcher::cleanup_watchers();
+    }
+    if show_tui {
+        let store = Store::open()?;
+        return tui::run_watchers_sync(&store);
     }
     watcher::list_watchers()
 }

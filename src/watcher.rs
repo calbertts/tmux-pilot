@@ -482,6 +482,6 @@ fn json_count(json: &serde_json::Value, key: &str) -> u64 {
         .unwrap_or(0)
 }
 
-fn is_process_alive(pid: u32) -> bool {
+pub fn is_process_alive(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }

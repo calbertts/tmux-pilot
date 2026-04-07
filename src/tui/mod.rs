@@ -2,6 +2,7 @@ mod app;
 mod fuzzy;
 mod notifications;
 pub mod theme;
+mod watchers;
 
 use anyhow::Result;
 use crate::config::AppConfig;
@@ -33,4 +34,9 @@ pub async fn run_dashboard(cfg: &AppConfig) -> Result<()> {
 /// Run the notification center TUI (synchronous — no network needed)
 pub fn run_notifications_sync(store: &Store) -> Result<()> {
     notifications::run(store)
+}
+
+/// Run the watchers TUI (synchronous — no network needed)
+pub fn run_watchers_sync(store: &Store) -> Result<()> {
+    watchers::run(store)
 }
