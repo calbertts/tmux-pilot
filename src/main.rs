@@ -7,6 +7,7 @@ mod copilot;
 mod store;
 mod tmux;
 mod tui;
+mod watcher;
 mod wizard;
 
 #[derive(Parser)]
@@ -65,6 +66,36 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Start a background watcher
+    Watch {
+        /// Watcher type: pipeline, pr-merge, pr-comments, sonarqube, custom
+        #[arg(value_name = "TYPE")]
+        watcher_type: String,
+        /// ID (build ID, PR ID, etc.)
+        #[arg(long)]
+        id: Option<u64>,
+        /// SonarQube project key
+        #[arg(long)]
+        project_key: Option<String>,
+        /// Custom script to run
+        #[arg(long)]
+        script: Option<String>,
+        /// Poll interval in seconds
+        #[arg(long, default_value = "120")]
+        interval: u64,
+        /// Run in foreground (don't detach)
+        #[arg(long)]
+        foreground: bool,
+    },
+    /// List or manage active watchers
+    Watchers {
+        /// Stop a watcher by ID
+        #[arg(long)]
+        stop: Option<String>,
+        /// Clean up dead watcher entries
+        #[arg(long)]
+        cleanup: bool,
+    },
     /// Show or edit configuration
     Config,
     /// Run the setup wizard to configure AzDo connection
@@ -112,6 +143,15 @@ async fn main() -> Result<()> {
             clear,
             json,
         } => cmd_notifications(count, &format, clear, json),
+        Commands::Watch {
+            watcher_type,
+            id,
+            project_key,
+            script,
+            interval,
+            foreground,
+        } => cmd_watch(&watcher_type, id, project_key, script, interval, foreground),
+        Commands::Watchers { stop, cleanup } => cmd_watchers(stop, cleanup),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
     }
@@ -203,7 +243,7 @@ fn cmd_notify(
     Ok(())
 }
 
-fn send_native_notification(title: &str, body: Option<&str>) {
+pub fn send_native_notification(title: &str, body: Option<&str>) {
     let body_text = body.unwrap_or("");
 
     if cfg!(target_os = "macos") {
@@ -302,4 +342,72 @@ fn cmd_notifications(count: bool, format: &str, clear: bool, json: bool) -> Resu
 
     // Default: open notification center TUI
     tui::run_notifications_sync(&store)
+}
+
+fn cmd_watch(
+    watcher_type: &str,
+    id: Option<u64>,
+    project_key: Option<String>,
+    script: Option<String>,
+    interval: u64,
+    foreground: bool,
+) -> Result<()> {
+    let args = watcher::WatcherArgs {
+        id,
+        project_key,
+        script,
+    };
+
+    if foreground {
+        eprintln!("👁 Starting {} watcher (foreground, interval: {}s)", watcher_type, interval);
+        watcher::run_watcher(watcher_type, &args, interval)
+    } else {
+        // Re-launch self as a detached background process with --foreground
+        let exe = std::env::current_exe()?;
+        let mut cmd_args = vec![
+            "watch".to_string(),
+            watcher_type.to_string(),
+            "--interval".to_string(),
+            interval.to_string(),
+            "--foreground".to_string(),
+        ];
+        if let Some(id_val) = id {
+            cmd_args.push("--id".to_string());
+            cmd_args.push(id_val.to_string());
+        }
+        if let Some(ref pk) = args.project_key {
+            cmd_args.push("--project-key".to_string());
+            cmd_args.push(pk.clone());
+        }
+        if let Some(ref s) = args.script {
+            cmd_args.push("--script".to_string());
+            cmd_args.push(s.clone());
+        }
+
+        let child = std::process::Command::new(&exe)
+            .args(&cmd_args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+
+        eprintln!(
+            "👁 Watcher started in background (pid: {}, type: {}, interval: {}s)",
+            child.id(),
+            watcher_type,
+            interval
+        );
+        eprintln!("   Use `tcs watchers` to list, `tcs watchers --stop <id>` to stop");
+        Ok(())
+    }
+}
+
+fn cmd_watchers(stop: Option<String>, cleanup: bool) -> Result<()> {
+    if let Some(id) = stop {
+        return watcher::stop_watcher(&id);
+    }
+    if cleanup {
+        return watcher::cleanup_watchers();
+    }
+    watcher::list_watchers()
 }
