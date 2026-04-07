@@ -99,6 +99,7 @@ mod tests {
             },
             azdo: None,
             keybindings: Default::default(),
+            notify: Default::default(),
         }
     }
 

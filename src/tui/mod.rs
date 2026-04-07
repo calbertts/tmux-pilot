@@ -1,5 +1,6 @@
 mod app;
 mod fuzzy;
+mod notifications;
 pub mod theme;
 
 use anyhow::Result;
@@ -27,4 +28,9 @@ pub async fn run_dashboard(cfg: &AppConfig) -> Result<()> {
     let store = Store::open()?;
     let mut app = App::new(cfg, store, app::View::Dashboard);
     app.run().await
+}
+
+/// Run the notification center TUI (synchronous — no network needed)
+pub fn run_notifications_sync(store: &Store) -> Result<()> {
+    notifications::run(store)
 }

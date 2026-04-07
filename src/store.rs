@@ -31,6 +31,31 @@ pub struct WindowMapping {
     pub window_type: String, // "copilot" | "shell"
 }
 
+/// A notification entry
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub id: i64,
+    pub level: String,    // info | warn | error | success
+    pub title: String,
+    pub body: Option<String>,
+    pub source: Option<String>,
+    pub link: Option<String>,
+    pub read: bool,
+    pub created_at: String,
+}
+
+/// A background watcher entry
+#[derive(Debug, Clone)]
+pub struct Watcher {
+    pub id: String,
+    pub watcher_type: String,
+    pub config: String,
+    pub pid: Option<u32>,
+    pub status: String,
+    pub started_at: String,
+    pub last_check_at: Option<String>,
+}
+
 impl Store {
     pub fn open() -> Result<Self> {
         let dir = data_dir();
@@ -72,6 +97,27 @@ impl Store {
                 cache_key   TEXT PRIMARY KEY,
                 data        TEXT NOT NULL,
                 fetched_at  TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                level       TEXT NOT NULL DEFAULT 'info',
+                title       TEXT NOT NULL,
+                body        TEXT,
+                source      TEXT,
+                link        TEXT,
+                read        INTEGER DEFAULT 0,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS watchers (
+                id              TEXT PRIMARY KEY,
+                watcher_type    TEXT NOT NULL,
+                config          TEXT NOT NULL,
+                pid             INTEGER,
+                status          TEXT DEFAULT 'running',
+                started_at      TEXT DEFAULT (datetime('now')),
+                last_check_at   TEXT
             );
             ",
         )?;
@@ -221,6 +267,149 @@ impl Store {
         self.conn.execute(
             "INSERT OR REPLACE INTO azdo_cache (cache_key, data) VALUES (?1, ?2)",
             params![key, data],
+        )?;
+        Ok(())
+    }
+
+    // ─── Notifications ───────────────────────────────────────
+
+    pub fn add_notification(
+        &self,
+        level: &str,
+        title: &str,
+        body: Option<&str>,
+        source: Option<&str>,
+        link: Option<&str>,
+    ) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO notifications (level, title, body, source, link)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![level, title, body, source, link],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn unread_count(&self) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM notifications WHERE read = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn list_notifications(&self, limit: usize) -> Result<Vec<Notification>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, level, title, body, source, link, read, created_at
+             FROM notifications ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt
+            .query_map(params![limit as i64], |row| {
+                Ok(Notification {
+                    id: row.get(0)?,
+                    level: row.get(1)?,
+                    title: row.get(2)?,
+                    body: row.get(3)?,
+                    source: row.get(4)?,
+                    link: row.get(5)?,
+                    read: row.get::<_, i64>(6)? != 0,
+                    created_at: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn mark_notification_read(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE notifications SET read = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_all_read(&self) -> Result<usize> {
+        let count = self.conn.execute(
+            "UPDATE notifications SET read = 1 WHERE read = 0",
+            [],
+        )?;
+        Ok(count)
+    }
+
+    pub fn delete_notification(&self, id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM notifications WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn cleanup_old_notifications(&self, max_age_days: i64) -> Result<usize> {
+        let count = self.conn.execute(
+            "DELETE FROM notifications WHERE datetime(created_at, '+' || ?1 || ' days') < datetime('now')",
+            params![max_age_days],
+        )?;
+        Ok(count)
+    }
+
+    // ─── Watchers ────────────────────────────────────────────
+
+    pub fn save_watcher(&self, watcher: &Watcher) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO watchers (id, watcher_type, config, pid, status)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                watcher.id,
+                watcher.watcher_type,
+                watcher.config,
+                watcher.pid,
+                watcher.status,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_watchers(&self) -> Result<Vec<Watcher>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, watcher_type, config, pid, status, started_at, last_check_at
+             FROM watchers ORDER BY started_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Watcher {
+                    id: row.get(0)?,
+                    watcher_type: row.get(1)?,
+                    config: row.get(2)?,
+                    pid: row.get(3)?,
+                    status: row.get(4)?,
+                    started_at: row.get(5)?,
+                    last_check_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn update_watcher_status(&self, id: &str, status: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE watchers SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_watcher_check(&self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE watchers SET last_check_at = datetime('now') WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_watcher(&self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM watchers WHERE id = ?1",
+            params![id],
         )?;
         Ok(())
     }

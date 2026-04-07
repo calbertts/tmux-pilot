@@ -2001,6 +2001,11 @@ fn state_badge(state: &str) -> (&str, ratatui::style::Color) {
 
 /// Build a single footer line: shortcuts left-aligned, legend right-aligned
 fn render_footer(f: &mut Frame, area: Rect, help_spans: Vec<Span>, legend_spans: Vec<Span>) {
+    render_footer_pub(f, area, help_spans, legend_spans);
+}
+
+/// Public version for use by other TUI modules
+pub fn render_footer_pub(f: &mut Frame, area: Rect, help_spans: Vec<Span>, legend_spans: Vec<Span>) {
     let help_width: usize = help_spans.iter().map(|s| s.content.chars().count()).sum();
     let legend_width: usize = legend_spans.iter().map(|s| s.content.chars().count()).sum();
     let total = help_width + legend_width;

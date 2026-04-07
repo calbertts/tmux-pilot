@@ -32,7 +32,20 @@ FEATURE_KEY="${FEATURE_KEY:-F}"
 TASK_KEY="${TASK_KEY:-T}"
 DASH_KEY="${DASH_KEY:-D}"
 
+# Read notification key (default: N)
+NOTIFY_KEY=$(tmux show-option -gqv @tcs-notify-key)
+NOTIFY_KEY="${NOTIFY_KEY:-N}"
+
 # Bind keys using tmux display-popup for floating overlay
 tmux bind-key "$FEATURE_KEY" display-popup -E -w 80% -h 80% "$TCS_BIN open"
 tmux bind-key "$TASK_KEY" display-popup -E -w 80% -h 80% "$TCS_BIN task"
 tmux bind-key "$DASH_KEY" display-popup -E -w 80% -h 80% "$TCS_BIN dash"
+tmux bind-key "$NOTIFY_KEY" display-popup -E -w 80% -h 60% "$TCS_BIN notifications"
+
+# Inject notification count into status-right (prepend to existing)
+CURRENT_STATUS_RIGHT=$(tmux show-option -gqv status-right)
+NOTIF_SEGMENT="#($TCS_BIN notifications --count --format tmux)"
+# Only inject if not already present
+if [[ "$CURRENT_STATUS_RIGHT" != *"tcs notifications"* ]]; then
+    tmux set-option -g status-right "${NOTIF_SEGMENT}${CURRENT_STATUS_RIGHT}"
+fi

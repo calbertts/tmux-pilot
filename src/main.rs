@@ -33,6 +33,38 @@ enum Commands {
         /// Session name
         name: String,
     },
+    /// Push a notification
+    Notify {
+        /// Notification title
+        title: String,
+        /// Notification body
+        #[arg(short, long)]
+        body: Option<String>,
+        /// Level: info, warn, error, success
+        #[arg(short, long, default_value = "info")]
+        level: String,
+        /// Source identifier (e.g. "pipeline", "pr-review")
+        #[arg(short, long)]
+        source: Option<String>,
+        /// Link (URL or tmux target)
+        #[arg(long)]
+        link: Option<String>,
+    },
+    /// Show notifications or notification count
+    Notifications {
+        /// Show only the unread count
+        #[arg(long)]
+        count: bool,
+        /// Output format for count: "plain" or "tmux"
+        #[arg(long, default_value = "plain")]
+        format: String,
+        /// Mark all as read
+        #[arg(long)]
+        clear: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Show or edit configuration
     Config,
     /// Run the setup wizard to configure AzDo connection
@@ -67,6 +99,19 @@ async fn main() -> Result<()> {
         Commands::Dash => tui::run_dashboard(&cfg).await,
         Commands::List => list_sessions().await,
         Commands::Free { name } => create_free_session(&cfg, &name).await,
+        Commands::Notify {
+            title,
+            body,
+            level,
+            source,
+            link,
+        } => cmd_notify(&title, body.as_deref(), &level, source.as_deref(), link.as_deref()),
+        Commands::Notifications {
+            count,
+            format,
+            clear,
+            json,
+        } => cmd_notifications(count, &format, clear, json),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
     }
@@ -131,4 +176,98 @@ fn show_config(cfg: &config::AppConfig) -> Result<()> {
     }
     println!("\n  Config file: {}", config::config_path().display());
     Ok(())
+}
+
+fn cmd_notify(
+    title: &str,
+    body: Option<&str>,
+    level: &str,
+    source: Option<&str>,
+    link: Option<&str>,
+) -> Result<()> {
+    let store = store::Store::open()?;
+    let id = store.add_notification(level, title, body, source, link)?;
+
+    // Also fire macOS native notification if configured
+    let cfg = config::AppConfig::load()?;
+    if cfg.notify.native {
+        let body_text = body.unwrap_or("");
+        let _ = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "display notification \"{}\" with title \"tcs: {}\"",
+                    body_text.replace('"', "\\\""),
+                    title.replace('"', "\\\""),
+                ),
+            ])
+            .output();
+    }
+
+    // Refresh tmux status bar to show updated count
+    let _ = std::process::Command::new("tmux")
+        .args(["refresh-client", "-S"])
+        .output();
+
+    eprintln!("🔔 Notification #{} created ({})", id, level);
+    Ok(())
+}
+
+fn cmd_notifications(count: bool, format: &str, clear: bool, json: bool) -> Result<()> {
+    let store = store::Store::open()?;
+
+    // Auto-cleanup old notifications
+    store.cleanup_old_notifications(7)?;
+
+    if clear {
+        let n = store.mark_all_read()?;
+        eprintln!("✓ Marked {} notifications as read", n);
+        // Refresh tmux status bar
+        let _ = std::process::Command::new("tmux")
+            .args(["refresh-client", "-S"])
+            .output();
+        return Ok(());
+    }
+
+    if count {
+        let n = store.unread_count()?;
+        match format {
+            "tmux" => {
+                if n > 0 {
+                    print!("#[fg=colour208,bold]🔔 {} #[default]", n);
+                }
+                // Empty output when 0 — keeps status bar clean
+            }
+            _ => println!("{}", n),
+        }
+        return Ok(());
+    }
+
+    if json {
+        let notifications = store.list_notifications(100)?;
+        let unread: Vec<_> = notifications.into_iter().filter(|n| !n.read).collect();
+        // Simple JSON array
+        print!("[");
+        for (i, n) in unread.iter().enumerate() {
+            if i > 0 {
+                print!(",");
+            }
+            print!(
+                "{{\"id\":{},\"level\":\"{}\",\"title\":\"{}\",\"source\":{},\"created_at\":\"{}\"}}",
+                n.id,
+                n.level,
+                n.title.replace('"', "\\\""),
+                n.source
+                    .as_ref()
+                    .map(|s| format!("\"{}\"", s))
+                    .unwrap_or_else(|| "null".to_string()),
+                n.created_at,
+            );
+        }
+        println!("]");
+        return Ok(());
+    }
+
+    // Default: open notification center TUI
+    tui::run_notifications_sync(&store)
 }

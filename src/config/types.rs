@@ -6,6 +6,7 @@ pub struct AppConfig {
     pub copilot: CopilotConfig,
     pub azdo: Option<AzdoConfig>,
     pub keybindings: KeybindingsConfig,
+    pub notify: NotifyConfig,
 }
 
 impl Default for AppConfig {
@@ -14,6 +15,7 @@ impl Default for AppConfig {
             copilot: CopilotConfig::default(),
             azdo: None,
             keybindings: KeybindingsConfig::default(),
+            notify: NotifyConfig::default(),
         }
     }
 }
@@ -111,6 +113,24 @@ impl Default for KeybindingsConfig {
             feature_selector: "F".to_string(),
             task_selector: "T".to_string(),
             dashboard: "D".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NotifyConfig {
+    /// Send macOS native notifications via osascript
+    pub native: bool,
+    /// Auto-cleanup notifications older than this many days
+    pub ttl_days: u32,
+}
+
+impl Default for NotifyConfig {
+    fn default() -> Self {
+        Self {
+            native: false,
+            ttl_days: 7,
         }
     }
 }
