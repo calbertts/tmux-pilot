@@ -29,6 +29,7 @@ use crate::{
 pub enum View {
     FeatureSelector,
     TaskSelector,
+    TaskDetail,
     Dashboard,
 }
 
@@ -88,6 +89,10 @@ pub struct App<'a> {
 
     // Vim-style: pending 'g' for gg combo
     pending_g: bool,
+
+    // Detail view state
+    detail_work_item: Option<WorkItem>,
+    detail_scroll: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -187,6 +192,8 @@ impl<'a> App<'a> {
             spinner_tick: 0,
             azdo_rx: None,
             pending_g: false,
+            detail_work_item: None,
+            detail_scroll: 0,
         }
     }
 
@@ -225,7 +232,7 @@ impl<'a> App<'a> {
         match self.view {
             View::FeatureSelector => self.load_local_features()?,
             View::TaskSelector => self.load_local_tasks()?,
-            View::Dashboard => self.load_dashboard()?,
+            View::TaskDetail | View::Dashboard => self.load_dashboard()?,
         }
         Ok(())
     }
@@ -293,7 +300,7 @@ impl<'a> App<'a> {
                     });
                 }
             }
-            View::Dashboard => {}
+            View::TaskDetail | View::Dashboard => {}
         }
     }
 
@@ -713,7 +720,7 @@ impl<'a> App<'a> {
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('o') {
             return self.switch_to_view(match self.view {
                 View::FeatureSelector => View::TaskSelector,
-                View::TaskSelector => View::FeatureSelector,
+                View::TaskSelector | View::TaskDetail => View::FeatureSelector,
                 View::Dashboard => View::FeatureSelector,
             });
         }
@@ -737,6 +744,7 @@ impl<'a> App<'a> {
             _ => match self.view {
                 View::FeatureSelector => self.handle_feature_key(key.code)?,
                 View::TaskSelector => self.handle_task_key(key.code)?,
+                View::TaskDetail => self.handle_detail_key(key.code)?,
                 View::Dashboard => self.handle_dashboard_key(key.code)?,
             },
         }
@@ -753,6 +761,9 @@ impl<'a> App<'a> {
             View::TaskSelector => {
                 self.task_list_state
                     .select(self.first_selectable_task_row());
+            }
+            View::TaskDetail => {
+                self.detail_scroll = 0;
             }
             View::Dashboard => {
                 if !self.dashboard_sessions.is_empty() {
@@ -777,6 +788,7 @@ impl<'a> App<'a> {
                     self.task_list_state.select(Some(pos));
                 }
             }
+            View::TaskDetail => {} // no-op in detail
             View::Dashboard => {
                 let len = self.dashboard_sessions.len();
                 if len > 0 {
@@ -801,7 +813,7 @@ impl<'a> App<'a> {
                 self.task_list_state
                     .select(self.first_selectable_task_row());
             }
-            View::Dashboard => {} // no filter in dashboard
+            View::TaskDetail | View::Dashboard => {} // no filter
         }
     }
 
@@ -841,6 +853,7 @@ impl<'a> App<'a> {
         match self.view {
             View::FeatureSelector => self.feature_list_state.offset(),
             View::TaskSelector => self.task_list_state.offset(),
+            View::TaskDetail => self.detail_scroll as usize,
             View::Dashboard => self.dashboard_list_state.offset(),
         }
     }
@@ -858,6 +871,7 @@ impl<'a> App<'a> {
                     self.task_list_state.select(Some(row));
                 }
             }
+            View::TaskDetail => {} // no click in detail
             View::Dashboard => {
                 if row < self.dashboard_sessions.len() {
                     self.dashboard_list_state.select(Some(row));
@@ -974,7 +988,16 @@ impl<'a> App<'a> {
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::TaskSelector),
             KeyCode::Enter => self.select_task()?,
             KeyCode::Char('o') => {
-                self.switch_to_view(View::FeatureSelector)?;
+                // Open detail view for selected task
+                if let Some(selected) = self.task_list_state.selected() {
+                    if let Some(Some(idx)) = self.task_visual_map.get(selected).copied() {
+                        if let Some(ref wi) = self.tasks[idx].work_item {
+                            self.detail_work_item = Some(wi.clone());
+                            self.detail_scroll = 0;
+                            self.view = View::TaskDetail;
+                        }
+                    }
+                }
             }
             KeyCode::Char('c') => {
                 // Create copilot window directly
@@ -1016,6 +1039,28 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    fn handle_detail_key(&mut self, code: KeyCode) -> Result<()> {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.detail_scroll = self.detail_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.detail_scroll = self.detail_scroll.saturating_add(1);
+            }
+            KeyCode::Char('o') | KeyCode::Backspace => {
+                // Go back to task selector
+                self.view = View::TaskSelector;
+            }
+            KeyCode::Enter => {
+                // Go to session from detail view
+                self.view = View::TaskSelector;
+                self.select_task()?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn move_selection_up(&mut self, view: &View) {
         match view {
             View::FeatureSelector => {
@@ -1037,6 +1082,9 @@ impl<'a> App<'a> {
                     if self.task_visual_map[i].is_some() { break; }
                 }
                 self.task_list_state.select(Some(i));
+            }
+            View::TaskDetail => {
+                self.detail_scroll = self.detail_scroll.saturating_sub(1);
             }
             View::Dashboard => {
                 let len = self.dashboard_sessions.len();
@@ -1068,6 +1116,9 @@ impl<'a> App<'a> {
                     if self.task_visual_map[i].is_some() { break; }
                 }
                 self.task_list_state.select(Some(i));
+            }
+            View::TaskDetail => {
+                self.detail_scroll = self.detail_scroll.saturating_add(1);
             }
             View::Dashboard => {
                 let len = self.dashboard_sessions.len();
@@ -1334,6 +1385,7 @@ impl<'a> App<'a> {
         match self.view {
             View::FeatureSelector => self.render_feature_selector(f, area),
             View::TaskSelector => self.render_task_selector(f, area),
+            View::TaskDetail => self.render_task_detail(f, area),
             View::Dashboard => self.render_dashboard(f, area),
         }
 
@@ -1375,7 +1427,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // search
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(2), // help + legend
+                Constraint::Length(1), // footer
             ])
             .split(area);
 
@@ -1486,23 +1538,21 @@ impl<'a> App<'a> {
         f.render_stateful_widget(list, chunks[2], &mut self.feature_list_state);
 
         // Bottom bar: help + status
-        let bottom_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(chunks[3]);
-
-        let help_line = if let Some(ref msg) = self.status_msg {
+        if let Some(ref msg) = self.status_msg {
             let frame = if self.loading {
                 SPINNER[self.spinner_tick % SPINNER.len()]
             } else {
                 "⚠"
             };
-            Line::from(Span::styled(
-                format!("  {} {}", frame, msg),
-                Style::default().fg(Gruvbox::YELLOW),
-            ))
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!("  {} {}", frame, msg),
+                    Style::default().fg(Gruvbox::YELLOW),
+                ))),
+                chunks[3],
+            );
         } else {
-            Line::from(vec![
+            let help = vec![
                 Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" move  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
@@ -1513,10 +1563,9 @@ impl<'a> App<'a> {
                 Span::styled(" new  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
-            ])
-        };
-        f.render_widget(Paragraph::new(help_line), bottom_chunks[0]);
-        render_legend(f, bottom_chunks[1], false);
+            ];
+            render_footer(f, chunks[3], help, state_legend(false));
+        }
     }
 
     fn render_task_selector(&mut self, f: &mut Frame, area: Rect) {
@@ -1527,7 +1576,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // search
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(2), // help/status + legend
+                Constraint::Length(1), // footer
             ])
             .split(area);
 
@@ -1650,40 +1699,165 @@ impl<'a> App<'a> {
         self.list_area = chunks[3];
         f.render_stateful_widget(list, chunks[3], &mut self.task_list_state);
 
-        // Bottom bar
-        let bottom_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(chunks[4]);
-
-        let help_line = if let Some(ref msg) = self.status_msg {
+        // Footer
+        if let Some(ref msg) = self.status_msg {
             let frame = if self.loading {
                 SPINNER[self.spinner_tick % SPINNER.len()]
             } else {
                 "⚠"
             };
-            Line::from(Span::styled(
-                format!("  {} {}", frame, msg),
-                Style::default().fg(Gruvbox::YELLOW),
-            ))
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!("  {} {}", frame, msg),
+                    Style::default().fg(Gruvbox::YELLOW),
+                ))),
+                chunks[4],
+            );
         } else {
-            Line::from(vec![
+            let help = vec![
                 Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" move  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
-                Span::styled(" open  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled(" go  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("o", Style::default().fg(Gruvbox::FG)),
-                Span::styled(" sessions  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("c", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +copilot  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("t", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +term  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
+            ];
+            render_footer(f, chunks[4], help, state_legend(true));
+        }
+    }
+
+    fn render_task_detail(&mut self, f: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // title
+                Constraint::Length(1), // spacer
+                Constraint::Min(1),    // content
+                Constraint::Length(1), // footer
             ])
+            .split(area);
+
+        let wi = match &self.detail_work_item {
+            Some(wi) => wi,
+            None => {
+                self.view = View::TaskSelector;
+                return;
+            }
         };
-        f.render_widget(Paragraph::new(help_line), bottom_chunks[0]);
-        render_legend(f, bottom_chunks[1], true);
+
+        // Title line
+        let (state_sym, state_color) = state_badge(&wi.state);
+        let type_str = wi.work_item_type.to_string();
+        let id_str = wi.id.map(|id| format!(" #{}", id)).unwrap_or_default();
+        let title_spans = vec![
+            Span::styled(format!("  {} ", wi.icon()), Style::default()),
+            Span::styled(
+                &type_str,
+                Style::default().fg(Gruvbox::GRAY),
+            ),
+            Span::styled(
+                &id_str,
+                Style::default().fg(Gruvbox::BLUE),
+            ),
+            Span::styled(
+                format!(" {}", wi.title),
+                Style::default()
+                    .fg(Gruvbox::FG_BRIGHT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" {}", state_sym), Style::default().fg(state_color)),
+        ];
+        f.render_widget(Paragraph::new(Line::from(title_spans)), chunks[0]);
+
+        // Content: description + acceptance criteria
+        let mut lines: Vec<Line> = vec![];
+
+        // Description section
+        lines.push(Line::from(Span::styled(
+            "  Description",
+            Style::default()
+                .fg(Gruvbox::ORANGE)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  ─────────────────────────────────────────",
+            Style::default().fg(Gruvbox::DARK_GRAY),
+        )));
+        if let Some(ref desc) = wi.description {
+            let clean = azdo::strip_html(desc);
+            for line in clean.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", line),
+                    Style::default().fg(Gruvbox::FG),
+                )));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  (no description)",
+                Style::default().fg(Gruvbox::GRAY),
+            )));
+        }
+
+        lines.push(Line::from(""));
+
+        // Acceptance Criteria section
+        lines.push(Line::from(Span::styled(
+            "  Acceptance Criteria",
+            Style::default()
+                .fg(Gruvbox::ORANGE)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  ─────────────────────────────────────────",
+            Style::default().fg(Gruvbox::DARK_GRAY),
+        )));
+        if let Some(ref ac) = wi.acceptance_criteria {
+            let clean = azdo::strip_html(ac);
+            for line in clean.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", line),
+                    Style::default().fg(Gruvbox::FG),
+                )));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  (none)",
+                Style::default().fg(Gruvbox::GRAY),
+            )));
+        }
+
+        // Assigned to
+        if let Some(ref assigned) = wi.assigned_to {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Assigned: ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled(assigned, Style::default().fg(Gruvbox::FG)),
+            ]));
+        }
+
+        let content = Paragraph::new(lines)
+            .scroll((self.detail_scroll, 0));
+        f.render_widget(content, chunks[2]);
+
+        // Footer
+        let help = vec![
+            Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
+            Span::styled(" scroll  ", Style::default().fg(Gruvbox::GRAY)),
+            Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
+            Span::styled(" go to session  ", Style::default().fg(Gruvbox::GRAY)),
+            Span::styled("o", Style::default().fg(Gruvbox::FG)),
+            Span::styled(" back  ", Style::default().fg(Gruvbox::GRAY)),
+            Span::styled("q", Style::default().fg(Gruvbox::FG)),
+            Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
+        ];
+        let legend = state_legend(false);
+        render_footer(f, chunks[3], help, legend);
     }
 
     fn render_dashboard(&mut self, f: &mut Frame, area: Rect) {
@@ -1693,7 +1867,7 @@ impl<'a> App<'a> {
                 Constraint::Length(1), // title
                 Constraint::Length(1), // spacer
                 Constraint::Min(1),    // list
-                Constraint::Length(2), // help + legend
+                Constraint::Length(1), // footer
             ])
             .split(area);
 
@@ -1775,12 +1949,7 @@ impl<'a> App<'a> {
         self.list_area = chunks[2];
         f.render_stateful_widget(list, chunks[2], &mut self.dashboard_list_state);
 
-        let bottom_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(chunks[3]);
-
-        let help = Line::from(vec![
+        let help = vec![
             Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
             Span::styled(" move  ", Style::default().fg(Gruvbox::GRAY)),
             Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
@@ -1791,25 +1960,14 @@ impl<'a> App<'a> {
             Span::styled(" kill  ", Style::default().fg(Gruvbox::GRAY)),
             Span::styled("q", Style::default().fg(Gruvbox::FG)),
             Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
-        ]);
-        f.render_widget(Paragraph::new(help), bottom_chunks[0]);
-
-        // Dashboard legend: just attached indicator
-        let legend_spans = vec![
-            Span::styled("▶", Style::default().fg(Gruvbox::GREEN)),
-            Span::styled(" attached  ", Style::default().fg(Gruvbox::GRAY)),
-            Span::styled("#", Style::default().fg(Gruvbox::BLUE)),
-            Span::styled(" linked to azdo", Style::default().fg(Gruvbox::GRAY)),
         ];
-        let text_width: usize = legend_spans.iter().map(|s| s.content.chars().count()).sum();
-        let padding = if bottom_chunks[1].width as usize > text_width + 2 {
-            bottom_chunks[1].width as usize - text_width - 2
-        } else {
-            0
-        };
-        let mut final_spans = vec![Span::raw(" ".repeat(padding))];
-        final_spans.extend(legend_spans);
-        f.render_widget(Paragraph::new(Line::from(final_spans)), bottom_chunks[1]);
+        let legend = vec![
+            Span::styled("▶", Style::default().fg(Gruvbox::GREEN)),
+            Span::styled("attached ", Style::default().fg(Gruvbox::GRAY)),
+            Span::styled("#", Style::default().fg(Gruvbox::BLUE)),
+            Span::styled("azdo", Style::default().fg(Gruvbox::GRAY)),
+        ];
+        render_footer(f, chunks[3], help, legend);
     }
 }
 
@@ -1834,22 +1992,39 @@ fn state_badge(state: &str) -> (&str, ratatui::style::Color) {
     }
 }
 
-/// Build a right-aligned legend line showing state symbols and item type icons
-fn render_legend(f: &mut Frame, area: Rect, show_types: bool) {
+/// Build a single footer line: shortcuts left-aligned, legend right-aligned
+fn render_footer(f: &mut Frame, area: Rect, help_spans: Vec<Span>, legend_spans: Vec<Span>) {
+    let help_width: usize = help_spans.iter().map(|s| s.content.chars().count()).sum();
+    let legend_width: usize = legend_spans.iter().map(|s| s.content.chars().count()).sum();
+    let total = help_width + legend_width;
+    let gap = if area.width as usize > total + 1 {
+        area.width as usize - total - 1
+    } else {
+        1
+    };
+
+    let mut spans = help_spans;
+    spans.push(Span::raw(" ".repeat(gap)));
+    spans.extend(legend_spans);
+
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Legend spans for state symbols (optionally with type icons)
+fn state_legend(show_types: bool) -> Vec<Span<'static>> {
     let mut spans: Vec<Span> = vec![];
 
-    // State symbols
     spans.push(Span::styled("○", Style::default().fg(Gruvbox::BLUE)));
     spans.push(Span::styled("new ", Style::default().fg(Gruvbox::GRAY)));
     spans.push(Span::styled("●", Style::default().fg(Gruvbox::GREEN)));
-    spans.push(Span::styled("active ", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("act ", Style::default().fg(Gruvbox::GRAY)));
     spans.push(Span::styled("◉", Style::default().fg(Gruvbox::AQUA)));
-    spans.push(Span::styled("resolved ", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("res ", Style::default().fg(Gruvbox::GRAY)));
     spans.push(Span::styled("✔", Style::default().fg(Gruvbox::GRAY)));
-    spans.push(Span::styled("closed", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("cls", Style::default().fg(Gruvbox::GRAY)));
 
     if show_types {
-        spans.push(Span::styled("  │  ", Style::default().fg(Gruvbox::DARK_GRAY)));
+        spans.push(Span::styled(" │ ", Style::default().fg(Gruvbox::DARK_GRAY)));
         spans.push(Span::styled("📖", Style::default()));
         spans.push(Span::styled("story ", Style::default().fg(Gruvbox::GRAY)));
         spans.push(Span::styled("🐛", Style::default()));
@@ -1858,23 +2033,9 @@ fn render_legend(f: &mut Frame, area: Rect, show_types: bool) {
         spans.push(Span::styled("task", Style::default().fg(Gruvbox::GRAY)));
     }
 
-    spans.push(Span::styled("  │  ", Style::default().fg(Gruvbox::DARK_GRAY)));
+    spans.push(Span::styled(" │ ", Style::default().fg(Gruvbox::DARK_GRAY)));
     spans.push(Span::styled("⊕", Style::default().fg(Gruvbox::GREEN)));
-    spans.push(Span::styled("new in azdo", Style::default().fg(Gruvbox::GRAY)));
+    spans.push(Span::styled("azdo", Style::default().fg(Gruvbox::GRAY)));
 
-    // Right-align
-    let text_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-    let padding = if area.width as usize > text_width + 2 {
-        area.width as usize - text_width - 2
-    } else {
-        0
-    };
-
-    let mut final_spans = vec![Span::raw(" ".repeat(padding))];
-    final_spans.extend(spans);
-
-    f.render_widget(
-        Paragraph::new(Line::from(final_spans)),
-        area,
-    );
+    spans
 }

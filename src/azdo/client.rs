@@ -329,7 +329,7 @@ fn parse_type(s: &str) -> WorkItemType {
 }
 
 /// Strip HTML tags and decode common entities → plain text for copilot context
-fn strip_html(html: &str) -> String {
+pub fn strip_html(html: &str) -> String {
     let mut result = html.to_string();
     // Convert block elements to newlines
     let block_tags = ["<br>", "<br/>", "<br />", "</p>", "</div>", "</li>", "</tr>"];
