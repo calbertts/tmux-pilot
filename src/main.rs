@@ -188,20 +188,10 @@ fn cmd_notify(
     let store = store::Store::open()?;
     let id = store.add_notification(level, title, body, source, link)?;
 
-    // Also fire macOS native notification if configured
+    // Fire native OS notification if configured
     let cfg = config::AppConfig::load()?;
     if cfg.notify.native {
-        let body_text = body.unwrap_or("");
-        let _ = std::process::Command::new("osascript")
-            .args([
-                "-e",
-                &format!(
-                    "display notification \"{}\" with title \"tcs: {}\"",
-                    body_text.replace('"', "\\\""),
-                    title.replace('"', "\\\""),
-                ),
-            ])
-            .output();
+        send_native_notification(title, body);
     }
 
     // Refresh tmux status bar to show updated count
@@ -211,6 +201,48 @@ fn cmd_notify(
 
     eprintln!("🔔 Notification #{} created ({})", id, level);
     Ok(())
+}
+
+fn send_native_notification(title: &str, body: Option<&str>) {
+    let body_text = body.unwrap_or("");
+
+    if cfg!(target_os = "macos") {
+        let _ = std::process::Command::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "display notification \"{}\" with title \"tcs\" subtitle \"{}\"",
+                    body_text.replace('"', "\\\""),
+                    title.replace('"', "\\\""),
+                ),
+            ])
+            .output();
+    } else if cfg!(target_os = "windows") {
+        // PowerShell toast notification (Windows 10+)
+        let ps_script = format!(
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; \
+             $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); \
+             $text = $template.GetElementsByTagName('text'); \
+             $text.Item(0).AppendChild($template.CreateTextNode('tcs: {}')) > $null; \
+             $text.Item(1).AppendChild($template.CreateTextNode('{}')) > $null; \
+             $toast = [Windows.UI.Notifications.ToastNotification]::new($template); \
+             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('tcs').Show($toast)",
+            title.replace('\'', "''"),
+            body_text.replace('\'', "''"),
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps_script])
+            .output();
+    } else {
+        // Linux: try notify-send (common on most distros)
+        let _ = std::process::Command::new("notify-send")
+            .args([
+                "--app-name=tcs",
+                &format!("tcs: {}", title),
+                body_text,
+            ])
+            .output();
+    }
 }
 
 fn cmd_notifications(count: bool, format: &str, clear: bool, json: bool) -> Result<()> {
