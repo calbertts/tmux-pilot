@@ -96,6 +96,10 @@ pub struct App<'a> {
 
     // Demo mode: use fake data, no AzDo/tmux
     demo: bool,
+    // Auto-animate: synthetic navigation + auto-exit
+    demo_auto: bool,
+    demo_auto_step: usize,
+    demo_auto_timer: std::time::Instant,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -165,7 +169,7 @@ enum AzdoFetchResult {
 const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 impl<'a> App<'a> {
-    pub fn new(cfg: &'a AppConfig, store: Store, view: View, demo: bool) -> Self {
+    pub fn new(cfg: &'a AppConfig, store: Store, view: View, demo: bool, demo_auto: bool) -> Self {
         Self {
             cfg,
             store,
@@ -198,6 +202,9 @@ impl<'a> App<'a> {
             detail_work_item: None,
             detail_scroll: 0,
             demo,
+            demo_auto,
+            demo_auto_step: 0,
+            demo_auto_timer: std::time::Instant::now(),
         }
     }
 
@@ -842,6 +849,9 @@ impl<'a> App<'a> {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
+        // Reset auto-animation timer after data is loaded
+        self.demo_auto_timer = std::time::Instant::now();
+
         while self.running {
             // Check for background AzDo result
             if let Some(ref mut rx) = self.azdo_rx {
@@ -854,6 +864,11 @@ impl<'a> App<'a> {
 
             if self.loading {
                 self.spinner_tick = self.spinner_tick.wrapping_add(1);
+            }
+
+            // Demo auto-animation: synthetic key events on a timer
+            if self.demo_auto {
+                self.tick_demo_auto();
             }
 
             terminal.draw(|f| self.render(f))?;
@@ -873,6 +888,35 @@ impl<'a> App<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Drive demo auto-animation: move cursor, pause, then exit
+    fn tick_demo_auto(&mut self) {
+        let elapsed = self.demo_auto_timer.elapsed();
+        // Script: (delay_ms, action)
+        // Wait 1s, then Down every 350ms x5, then Up every 350ms x3, wait 1.5s, quit
+        let script: &[(u64, i8)] = &[
+            (1000, 0),   // initial pause
+            (1350, 1),   // down
+            (1700, 1),
+            (2050, 1),
+            (2400, 1),
+            (2750, 1),
+            (3100, -1),  // up
+            (3450, -1),
+            (3800, -1),
+            (5300, 99),  // quit
+        ];
+        let ms = elapsed.as_millis() as u64;
+        while self.demo_auto_step < script.len() && ms >= script[self.demo_auto_step].0 {
+            match script[self.demo_auto_step].1 {
+                1 => self.move_cursor_down(),
+                -1 => self.move_cursor_up(),
+                99 => self.running = false,
+                _ => {}
+            }
+            self.demo_auto_step += 1;
+        }
     }
 
     fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
@@ -1244,6 +1288,16 @@ impl<'a> App<'a> {
             _ => {}
         }
         Ok(())
+    }
+
+    fn move_cursor_down(&mut self) {
+        let view = self.view.clone();
+        self.move_selection_down(&view);
+    }
+
+    fn move_cursor_up(&mut self) {
+        let view = self.view.clone();
+        self.move_selection_up(&view);
     }
 
     fn move_selection_up(&mut self, view: &View) {

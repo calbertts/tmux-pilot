@@ -1,4 +1,5 @@
 # VHS tape for tmux-pilot demo GIF
+# Shows the TUI as floating popups inside tmux (display-popup)
 # Run with: vhs docs/demo.tape
 
 Output docs/screenshots/demo.gif
@@ -14,15 +15,25 @@ Set TypingSpeed 40ms
 Set WindowBar Colorful
 Set WindowBarSize 40
 
-# ─── Feature Selector ────────────────────────────────────────────────
+# Start tmux with a clean demo server
 Hide
-Type "clear"
+Type "tmux -L pilot-demo new-session -s demo"
 Enter
+Sleep 1.5s
+# Put some content in the background so the popup floats over it
+Type "echo '  tmux-pilot — AI session manager'; echo ''; echo '  prefix+F  Feature selector'; echo '  prefix+T  Task selector'; echo '  prefix+D  Dashboard'; echo '  prefix+N  Notifications'; echo '  prefix+W  Watchers'; echo ''"
+Enter
+Sleep 500ms
 Show
-Sleep 300ms
-Type "pilot --demo"
+Sleep 1.5s
+
+# ─── Feature Selector popup ─────────────────────────────────────────
+Hide
+Type "tmux display-popup -E -w 80% -h 80% 'pilot --demo'"
 Enter
 Sleep 2s
+Show
+Sleep 1s
 
 Down
 Sleep 350ms
@@ -43,17 +54,15 @@ Sleep 350ms
 
 Sleep 2s
 Type "q"
-Sleep 500ms
+Sleep 1s
 
-# ─── Task Selector ───────────────────────────────────────────────────
+# ─── Task Selector popup ────────────────────────────────────────────
 Hide
-Type "clear"
-Enter
-Show
-Sleep 300ms
-Type "pilot task --demo"
+Type "tmux display-popup -E -w 80% -h 80% 'pilot task --demo'"
 Enter
 Sleep 2s
+Show
+Sleep 1s
 
 Down
 Sleep 350ms
@@ -74,17 +83,15 @@ Sleep 350ms
 
 Sleep 2s
 Type "q"
-Sleep 500ms
+Sleep 1s
 
-# ─── Dashboard ───────────────────────────────────────────────────────
+# ─── Dashboard popup ────────────────────────────────────────────────
 Hide
-Type "clear"
-Enter
-Show
-Sleep 300ms
-Type "pilot dash --demo"
+Type "tmux display-popup -E -w 80% -h 80% 'pilot dash --demo'"
 Enter
 Sleep 2s
+Show
+Sleep 1s
 
 Down
 Sleep 400ms
@@ -95,14 +102,10 @@ Sleep 400ms
 
 Sleep 2s
 Type "q"
-Sleep 500ms
+Sleep 1.5s
 
-# ─── Help ────────────────────────────────────────────────────────────
+# Clean up
 Hide
-Type "clear"
+Type "tmux -L pilot-demo kill-server"
 Enter
-Show
-Sleep 300ms
-Type "pilot help-all"
-Enter
-Sleep 4s
+Sleep 500ms
