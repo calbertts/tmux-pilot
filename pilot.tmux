@@ -27,6 +27,19 @@ if [ -z "$PILOT_BIN" ] || [ ! -x "$PILOT_BIN" ]; then
     fi
 fi
 
+# Install bundled skills into ~/.copilot/skills/ (symlinks, idempotent)
+SKILLS_DIR="${CURRENT_DIR}/skills"
+COPILOT_SKILLS_DIR="$HOME/.copilot/skills"
+if [ -d "$SKILLS_DIR" ] && [ -d "$COPILOT_SKILLS_DIR" ]; then
+    for skill in "$SKILLS_DIR"/*/; do
+        skill_name=$(basename "$skill")
+        target="${COPILOT_SKILLS_DIR}/${skill_name}"
+        if [ ! -e "$target" ]; then
+            ln -sf "$skill" "$target"
+        fi
+    done
+fi
+
 # Forward critical env vars into tmux server so display-popup inherits them
 for var in AZURE_DEVOPS_PAT PILOT_AZDO_PROJECT PILOT_AZDO_TEAM PILOT_AZDO_AREA PILOT_CODE_PATH; do
     val=$(tmux show-environment "$var" 2>/dev/null)
