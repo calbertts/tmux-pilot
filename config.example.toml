@@ -38,3 +38,11 @@ prompt_template = "I'm working on {type} #{id}: {title}"
 feature_selector = "F"
 task_selector = "T"
 dashboard = "D"
+
+[notify]
+# Send native OS notifications (macOS, Windows, Linux)
+native = true
+# Play sound on notifications (default: true)
+sound = true
+# Auto-cleanup notifications older than N days
+ttl_days = 7

@@ -16,12 +16,13 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 - **Task selector** (`prefix+T`) — grouped by type: Bugs 🐛, User Stories 📖, Tasks ✅, Free 💻
 - **Dashboard** (`prefix+D`) — overview of all sessions with window previews
 - **Notification center** (`prefix+N`) — 🔔 in status bar, level icons, source tags
-- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube
+- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube, custom scripts with live progress
 - **Detail view** — press `o` on any work item to read description + acceptance criteria
 - **Copilot integration** — auto-launch copilot with work item context injection
 - **AzDo integration** — fetch features/stories/bugs via REST API (curl-based, Zscaler-compatible)
 - **Fuzzy search** — type to filter in any view
-- **Native notifications** — macOS, Windows, Linux desktop notifications
+- **Native notifications** — macOS, Windows, Linux desktop notifications with sound
+- **Notification sound** — configurable ping sound on every notification (on by default)
 - **Session persistence** — copilot sessions survive tmux restarts via `pilot scan` + `pilot restore`
 - **SQLite persistence** — session mappings, notifications, watchers, AzDo cache
 
@@ -85,8 +86,10 @@ pilot help-all     # Full reference
 
 ```bash
 pilot notify "Build failed" -l error -s pipeline
-pilot watch pipeline --id 12345
-pilot watch pr-merge --id 678
+pilot watch pipeline --name pipe-pr123 --id 12345
+pilot watch custom --name my-download --script "check.sh" --interval 30
+pilot watchers                  # Shows progress for custom watchers
+pilot watchers --stop my-download
 pilot watchers --tui
 ```
 
@@ -137,6 +140,7 @@ area_paths = ["My-Project\\My-Team"]
 
 [notify]
 native = true
+sound = true
 ttl_days = 7
 ```
 
