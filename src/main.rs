@@ -648,21 +648,21 @@ fn is_copilot_running(target: &str) -> bool {
 fn cmd_scan() -> Result<()> {
     use std::collections::HashMap;
 
-    // 1. Build a map of alive PIDs → copilot session UUIDs from lock files
     let session_state = dirs::home_dir()
         .map(|h| h.join(".copilot/session-state"))
         .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
 
+    // 1. Build map of alive PIDs → copilot session UUIDs from lock files.
+    // Only check dirs that actually contain lock files (fast glob).
     let mut lock_map: HashMap<u32, String> = HashMap::new();
     if session_state.is_dir() {
         for entry in std::fs::read_dir(&session_state)? {
             let entry = entry?;
-            let path = entry.path();
-            if !path.is_dir() {
+            if !entry.path().is_dir() {
                 continue;
             }
             let uuid = entry.file_name().to_string_lossy().to_string();
-            for file in std::fs::read_dir(&path)? {
+            for file in std::fs::read_dir(entry.path())? {
                 let file = file?;
                 let fname = file.file_name().to_string_lossy().to_string();
                 if let Some(pid_str) = fname
@@ -670,12 +670,8 @@ fn cmd_scan() -> Result<()> {
                     .and_then(|s| s.strip_suffix(".lock"))
                 {
                     if let Ok(pid) = pid_str.parse::<u32>() {
-                        // Check if process is alive
-                        let alive = std::process::Command::new("kill")
-                            .args(["-0", &pid.to_string()])
-                            .output()
-                            .map(|o| o.status.success())
-                            .unwrap_or(false);
+                        // Use raw kill(pid, 0) syscall via nix-style check
+                        let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
                         if alive {
                             lock_map.insert(pid, uuid.clone());
                         }
@@ -686,15 +682,14 @@ fn cmd_scan() -> Result<()> {
     }
 
     if lock_map.is_empty() {
-        println!("No active copilot sessions found.");
         return Ok(());
     }
 
-    // 2. List all tmux panes
+    // 2. List all tmux panes with copilot running (skip shells — much faster)
     let panes_output = std::process::Command::new("tmux")
         .args([
             "list-panes", "-a", "-F",
-            "#{session_name}|#{window_name}|#{pane_pid}",
+            "#{session_name}|#{window_name}|#{pane_pid}|#{pane_current_command}",
         ])
         .output()?;
     let panes_str = String::from_utf8_lossy(&panes_output.stdout);
@@ -704,7 +699,7 @@ fn cmd_scan() -> Result<()> {
 
     for line in panes_str.lines() {
         let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() < 3 {
+        if parts.len() < 4 {
             continue;
         }
         let sess = parts[0];
@@ -713,22 +708,24 @@ fn cmd_scan() -> Result<()> {
             Ok(p) => p,
             Err(_) => continue,
         };
+        let cmd = parts[3];
 
-        // Walk the process tree and check each PID against lock_map
+        // Only walk process trees for panes running copilot/node (not zsh/bash/nvim)
+        if cmd != "node" && !cmd.contains("copilot") {
+            continue;
+        }
+
         let descendants = get_all_descendants(pane_pid);
         let matched = descendants.iter().find_map(|pid| lock_map.get(pid));
 
         if let Some(uuid) = matched {
             store.upsert_copilot_session_id(sess, win, uuid)?;
-            println!("  ✓ {} / {} → {}", sess, win, uuid);
             linked += 1;
         }
     }
 
     if linked > 0 {
-        println!("\n✓ Linked {} copilot session(s)", linked);
-    } else {
-        println!("No copilot sessions matched to tmux panes.");
+        eprintln!("pilot: scanned {} copilot session(s)", linked);
     }
     Ok(())
 }
