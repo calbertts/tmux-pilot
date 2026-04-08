@@ -30,7 +30,8 @@ fi
 # Install bundled skills into ~/.copilot/skills/ (symlinks, idempotent)
 SKILLS_DIR="${CURRENT_DIR}/skills"
 COPILOT_SKILLS_DIR="$HOME/.copilot/skills"
-if [ -d "$SKILLS_DIR" ] && [ -d "$COPILOT_SKILLS_DIR" ]; then
+if [ -d "$SKILLS_DIR" ]; then
+    mkdir -p "$COPILOT_SKILLS_DIR"
     for skill in "$SKILLS_DIR"/*/; do
         skill_name=$(basename "$skill")
         target="${COPILOT_SKILLS_DIR}/${skill_name}"
