@@ -4,13 +4,13 @@
 Output docs/screenshots/demo.gif
 
 Set Shell "bash"
-Set FontFamily "JetBrains Mono"
-Set FontSize 14
-Set Width 1200
-Set Height 700
-Set Padding 20
+Set FontFamily "Menlo"
+Set FontSize 18
+Set Width 1100
+Set Height 650
+Set Padding 16
 Set Theme "Builtin Dark"
-Set TypingSpeed 60ms
+Set TypingSpeed 50ms
 Set WindowBar Colorful
 Set WindowBarSize 40
 
