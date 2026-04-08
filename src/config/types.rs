@@ -122,6 +122,8 @@ impl Default for KeybindingsConfig {
 pub struct NotifyConfig {
     /// Send macOS native notifications via osascript
     pub native: bool,
+    /// Play a sound with notifications
+    pub sound: bool,
     /// Auto-cleanup notifications older than this many days
     pub ttl_days: u32,
 }
@@ -130,6 +132,7 @@ impl Default for NotifyConfig {
     fn default() -> Self {
         Self {
             native: false,
+            sound: true,
             ttl_days: 7,
         }
     }

@@ -282,7 +282,9 @@ fn cmd_notify(
     // Fire native OS notification if configured
     let cfg = config::AppConfig::load()?;
     if cfg.notify.native {
-        send_native_notification(title, body);
+        send_native_notification(title, body, cfg.notify.sound);
+    } else if cfg.notify.sound {
+        play_notification_sound();
     }
 
     // Refresh tmux status bar to show updated count
@@ -294,17 +296,19 @@ fn cmd_notify(
     Ok(())
 }
 
-pub fn send_native_notification(title: &str, body: Option<&str>) {
+pub fn send_native_notification(title: &str, body: Option<&str>, sound: bool) {
     let body_text = body.unwrap_or("");
 
     if cfg!(target_os = "macos") {
+        let sound_clause = if sound { " sound name \"Ping\"" } else { "" };
         let _ = std::process::Command::new("osascript")
             .args([
                 "-e",
                 &format!(
-                    "display notification \"{}\" with title \"pilot\" subtitle \"{}\"",
+                    "display notification \"{}\" with title \"pilot\" subtitle \"{}\"{}",
                     body_text.replace('"', "\\\""),
                     title.replace('"', "\\\""),
+                    sound_clause,
                 ),
             ])
             .output();
@@ -333,6 +337,19 @@ pub fn send_native_notification(title: &str, body: Option<&str>) {
                 body_text,
             ])
             .output();
+    }
+}
+
+/// Play notification sound without a visual notification
+pub fn play_notification_sound() {
+    if cfg!(target_os = "macos") {
+        let _ = std::process::Command::new("afplay")
+            .args(["/System/Library/Sounds/Ping.aiff"])
+            .spawn();
+    }
+    // Linux/Windows: bell character as fallback
+    if !cfg!(target_os = "macos") {
+        eprint!("\x07");
     }
 }
 

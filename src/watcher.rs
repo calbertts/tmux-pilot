@@ -469,10 +469,14 @@ fn notify(
 ) {
     store.add_notification(level, title, body, Some(source), link).ok();
 
-    // Fire native notification
+    // Fire native notification and/or sound
     let cfg = config::AppConfig::load().ok();
-    if cfg.as_ref().map(|c| c.notify.native).unwrap_or(false) {
-        crate::send_native_notification(title, body);
+    let native = cfg.as_ref().map(|c| c.notify.native).unwrap_or(false);
+    let sound = cfg.as_ref().map(|c| c.notify.sound).unwrap_or(true);
+    if native {
+        crate::send_native_notification(title, body, sound);
+    } else if sound {
+        crate::play_notification_sound();
     }
 
     // Refresh tmux status bar
