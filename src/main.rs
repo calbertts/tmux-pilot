@@ -120,6 +120,8 @@ enum Commands {
     },
     /// Restore copilot sessions after a tmux restart
     Restore,
+    /// Scan running tmux panes and link active copilot sessions
+    Scan,
 }
 
 #[tokio::main]
@@ -188,6 +190,7 @@ async fn main() -> Result<()> {
         Commands::HelpAll => show_help_all(),
         Commands::SessionLink { .. } => unreachable!(), // handled above
         Commands::Restore => cmd_restore(&cfg),
+        Commands::Scan => cmd_scan(),
     }
 }
 
@@ -472,6 +475,7 @@ fn show_help_all() -> Result<()> {
     pilot config              Show current configuration
     pilot setup               Interactive setup wizard
     pilot restore             Restore copilot sessions after tmux restart
+    pilot scan                Detect and link running copilot sessions
 
   ━━━ Notifications ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -639,4 +643,109 @@ fn is_copilot_running(target: &str) -> bool {
             cmd == "node" || cmd.contains("copilot")
         })
         .unwrap_or(false)
+}
+
+fn cmd_scan() -> Result<()> {
+    use std::collections::HashMap;
+
+    // 1. Build a map of alive PIDs → copilot session UUIDs from lock files
+    let session_state = dirs::home_dir()
+        .map(|h| h.join(".copilot/session-state"))
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+
+    let mut lock_map: HashMap<u32, String> = HashMap::new();
+    if session_state.is_dir() {
+        for entry in std::fs::read_dir(&session_state)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let uuid = entry.file_name().to_string_lossy().to_string();
+            for file in std::fs::read_dir(&path)? {
+                let file = file?;
+                let fname = file.file_name().to_string_lossy().to_string();
+                if let Some(pid_str) = fname
+                    .strip_prefix("inuse.")
+                    .and_then(|s| s.strip_suffix(".lock"))
+                {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        // Check if process is alive
+                        let alive = std::process::Command::new("kill")
+                            .args(["-0", &pid.to_string()])
+                            .output()
+                            .map(|o| o.status.success())
+                            .unwrap_or(false);
+                        if alive {
+                            lock_map.insert(pid, uuid.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if lock_map.is_empty() {
+        println!("No active copilot sessions found.");
+        return Ok(());
+    }
+
+    // 2. List all tmux panes
+    let panes_output = std::process::Command::new("tmux")
+        .args([
+            "list-panes", "-a", "-F",
+            "#{session_name}|#{window_name}|#{pane_pid}",
+        ])
+        .output()?;
+    let panes_str = String::from_utf8_lossy(&panes_output.stdout);
+
+    let store = Store::open()?;
+    let mut linked = 0;
+
+    for line in panes_str.lines() {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let sess = parts[0];
+        let win = parts[1];
+        let pane_pid: u32 = match parts[2].parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        // Walk the process tree and check each PID against lock_map
+        let descendants = get_all_descendants(pane_pid);
+        let matched = descendants.iter().find_map(|pid| lock_map.get(pid));
+
+        if let Some(uuid) = matched {
+            store.upsert_copilot_session_id(sess, win, uuid)?;
+            println!("  ✓ {} / {} → {}", sess, win, uuid);
+            linked += 1;
+        }
+    }
+
+    if linked > 0 {
+        println!("\n✓ Linked {} copilot session(s)", linked);
+    } else {
+        println!("No copilot sessions matched to tmux panes.");
+    }
+    Ok(())
+}
+
+/// Get all descendant PIDs of a process (recursive)
+fn get_all_descendants(pid: u32) -> Vec<u32> {
+    let mut result = vec![pid];
+    if let Ok(output) = std::process::Command::new("pgrep")
+        .args(["-P", &pid.to_string()])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if let Ok(child_pid) = line.trim().parse::<u32>() {
+                result.extend(get_all_descendants(child_pid));
+            }
+        }
+    }
+    result
 }
