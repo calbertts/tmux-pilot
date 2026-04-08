@@ -105,6 +105,9 @@ enum Commands {
     Config,
     /// Run the setup wizard to configure AzDo connection
     Setup,
+    /// Show detailed help with all features and keybindings
+    #[command(name = "help-all")]
+    HelpAll,
 }
 
 #[tokio::main]
@@ -118,6 +121,12 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
+
+    // Short-circuit for help-all (no config needed)
+    if matches!(cli.command, Some(Commands::HelpAll)) {
+        return show_help_all();
+    }
+
     let mut cfg = config::AppConfig::load()?;
 
     // Auto-trigger setup if AzDo not configured and using a command that needs it
@@ -159,6 +168,7 @@ async fn main() -> Result<()> {
         Commands::Watchers { stop, cleanup, tui: show_tui } => cmd_watchers(stop, cleanup, show_tui),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
+        Commands::HelpAll => show_help_all(),
     }
 }
 
@@ -419,4 +429,114 @@ fn cmd_watchers(stop: Option<String>, cleanup: bool, show_tui: bool) -> Result<(
         return tui::run_watchers_sync(&store);
     }
     watcher::list_watchers()
+}
+
+fn show_help_all() -> Result<()> {
+    let help = r#"
+  tmux-pilot — tmux session manager for AI coding agents
+
+  ━━━ Quick Start ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    1. pilot setup            Interactive wizard (PAT → org → project → team)
+    2. Add to ~/.tmux.conf:   run-shell /path/to/tmux-pilot/pilot.tmux
+    3. tmux source ~/.tmux.conf
+    4. prefix + F              Open feature selector
+
+  ━━━ CLI Commands ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    pilot                     Feature selector (default)
+    pilot open                Feature selector
+    pilot task                Task selector (current session's feature)
+    pilot dash                Session dashboard
+    pilot ls                  List active tmux sessions
+    pilot free "Name"         Create a free session (no AzDo link)
+    pilot config              Show current configuration
+    pilot setup               Interactive setup wizard
+
+  ━━━ Notifications ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    pilot notify "title"      Push a notification
+      -b "body"                 Optional body text
+      -l warn|error|success     Level (default: info)
+      -s "source"               Source tag (e.g., "pipeline")
+      --link "url"              Clickable link
+    pilot notifications       Open notification center TUI
+      --count                   Show unread count
+      --count --format tmux     For tmux status bar
+      --clear                   Mark all as read
+      --json                    Output as JSON
+
+  ━━━ Watchers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    pilot watch pipeline --id 12345     Watch a build
+    pilot watch pr-merge --id 678       Watch PR for merge
+    pilot watch pr-comments --id 678    Watch PR for new comments
+    pilot watch sonarqube --project-key KEY  Watch quality gate
+    pilot watch custom --script "cmd"   Run custom check
+      --interval 120              Poll interval in seconds
+    pilot watchers                List active watchers
+    pilot watchers --tui          Interactive watcher manager
+    pilot watchers --stop ID      Stop a watcher
+    pilot watchers --cleanup      Remove dead entries
+
+  ━━━ tmux Keybindings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    prefix + F    Feature selector
+    prefix + T    Task selector
+    prefix + D    Session dashboard
+    prefix + N    Notification center
+    prefix + W    Watcher manager
+
+    Customize via tmux options:
+      set -g @pilot-feature-key "F"
+      set -g @pilot-task-key "T"
+      set -g @pilot-dash-key "D"
+      set -g @pilot-notify-key "N"
+      set -g @pilot-watcher-key "W"
+
+  ━━━ TUI Navigation ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    j/k  ↑/↓       Navigate
+    Enter           Select / open / attach
+    o               Open detail (task view) / view tasks (feature view)
+    Ctrl+O          Go back to previous view
+    Ctrl+N          New session (feature) / new copilot window (task)
+    Ctrl+T          New terminal window (task view)
+    d               Kill session (dashboard)
+    gg              Jump to top
+    G (Shift+G)     Jump to bottom
+    q / Esc         Quit
+    Type            Fuzzy filter
+    Backspace       Clear filter
+    Mouse scroll    Navigate
+
+  ━━━ State Badges ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    ○  New (blue)        ●  Active (green)
+    ◉  Resolved (aqua)   ✔  Closed (gray)
+    ⊕  Not yet started locally (AzDo only)
+
+  ━━━ Work Item Icons ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    🏗  Feature    📖  User Story    🐛  Bug    ✅  Task    📁  Free
+
+  ━━━ Environment Variables ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    AZURE_DEVOPS_PAT      AzDo personal access token (required)
+    PILOT_AZDO_PAT        Alternative PAT variable
+    PILOT_AZDO_ORG        AzDo organization (overrides config)
+    PILOT_AZDO_PROJECT    AzDo project (overrides config)
+    PILOT_AZDO_TEAM       Team name (overrides config)
+    PILOT_AZDO_AREA       Area path filter (overrides config)
+    PILOT_CODE_PATH       Code directory (auto-adds --add-dir to copilot)
+
+  ━━━ Config File ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    macOS:  ~/Library/Application Support/pilot/config.toml
+    Linux:  ~/.config/pilot/config.toml
+
+    Run `pilot setup` to create interactively, or `pilot config` to view.
+"#;
+    print!("{}", help);
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -12,7 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use std::io;
+use std::io::{self, Write};
 
 use crate::azdo;
 use crate::config::{AppConfig, AzdoConfig, AzdoFilters};
@@ -20,52 +20,99 @@ use crate::tui::theme::Gruvbox;
 
 /// Run the setup wizard. Returns true if config was saved.
 pub async fn run_wizard(cfg: &mut AppConfig) -> Result<bool> {
-    // Check if PAT is available
-    std::env::var("AZURE_DEVOPS_PAT")
-        .or_else(|_| std::env::var("PILOT_AZDO_PAT"))
-        .context("No AzDo PAT found. Set AZURE_DEVOPS_PAT or PILOT_AZDO_PAT first.")?;
-
     println!("🔧 pilot setup wizard\n");
+    println!("  This wizard will configure your Azure DevOps connection.");
+    println!("  You need a Personal Access Token (PAT) with read access to work items.\n");
 
-    // Step 1: Organization
-    let org = text_prompt("AzDo organization", None)?;
+    // Step 1: PAT — check env first, prompt if missing
+    let pat = match std::env::var("AZURE_DEVOPS_PAT")
+        .or_else(|_| std::env::var("PILOT_AZDO_PAT"))
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        Some(existing) => {
+            let masked = format!("{}…{}", &existing[..4.min(existing.len())], &existing[existing.len().saturating_sub(4)..]);
+            println!("  ✔ PAT found in environment ({})\n", masked);
+            existing
+        }
+        None => {
+            let entered = password_prompt("  Azure DevOps PAT")?;
+            if entered.is_empty() {
+                bail!("PAT is required. Set AZURE_DEVOPS_PAT env var or enter it here.");
+            }
+            // Validate by fetching profile
+            print!("  Validating PAT...");
+            io::stdout().flush()?;
+            match azdo::fetch_organizations(&entered) {
+                Ok(_) => println!(" ✔\n"),
+                Err(e) => {
+                    println!(" ✘");
+                    bail!("PAT validation failed: {}. Check your token and try again.", e);
+                }
+            }
+            // Set for this process so subsequent calls work
+            std::env::set_var("AZURE_DEVOPS_PAT", &entered);
+            entered
+        }
+    };
 
-    // Step 2: Fetch projects and let user pick
-    println!("\n  Fetching projects from {}...", org);
-    let projects = azdo::fetch_projects(&org)?;
+    // Step 2: Organization — fetch from API
+    print!("  Fetching organizations...");
+    io::stdout().flush()?;
+    let orgs = azdo::fetch_organizations(&pat)?;
+    println!(" found {}.\n", orgs.len());
+
+    let org = if orgs.is_empty() {
+        text_prompt("AzDo organization (type name)", None)?
+    } else if orgs.len() == 1 {
+        println!("  ✔ Using organization: {}\n", orgs[0]);
+        orgs[0].clone()
+    } else {
+        pick_from_list("Select organization", &orgs)?
+    };
+
+    // Step 3: Project
+    print!("  Fetching projects from {}...", org);
+    io::stdout().flush()?;
+    let projects = azdo::fetch_projects_with_pat(&org, &pat)?;
+    println!(" found {}.\n", projects.len());
     if projects.is_empty() {
         bail!("No projects found in organization '{}'", org);
     }
     let project = pick_from_list("Select project", &projects)?;
 
-    // Step 3: Fetch teams and let user pick
-    println!("\n  Fetching teams from {}/{}...", org, project);
-    let teams = azdo::fetch_teams(&org, &project)?;
+    // Step 4: Team
+    print!("  Fetching teams from {}/{}...", org, project);
+    io::stdout().flush()?;
+    let teams = azdo::fetch_teams_with_pat(&org, &project, &pat)?;
+    println!(" found {}.\n", teams.len());
     let team = if teams.is_empty() {
-        println!("  No teams found, skipping.");
+        println!("  No teams found, skipping.\n");
         None
     } else {
         Some(pick_from_list("Select team", &teams)?)
     };
 
-    // Step 4: Fetch area paths
-    println!("\n  Fetching area paths...");
-    let areas = azdo::fetch_area_paths(&org, &project)?;
+    // Step 5: Area paths
+    print!("  Fetching area paths...");
+    io::stdout().flush()?;
+    let areas = azdo::fetch_area_paths_with_pat(&org, &project, &pat)?;
+    println!(" found {}.\n", areas.len());
     let area_path = if areas.is_empty() {
-        println!("  No area paths found, skipping.");
+        println!("  No area paths found, skipping.\n");
         None
     } else {
         Some(pick_from_list("Select area path", &areas)?)
     };
 
-    // Step 5: Iteration filter
+    // Step 6: Iteration filter
     let iteration = text_prompt(
         "Iteration filter (\"current\", specific path, or empty for all)",
-        Some(""),
+        Some("current"),
     )?;
 
     // Save
-    let azdo = AzdoConfig {
+    let azdo_cfg = AzdoConfig {
         organization: org,
         project,
         team,
@@ -80,13 +127,50 @@ pub async fn run_wizard(cfg: &mut AppConfig) -> Result<bool> {
         },
     };
 
-    cfg.azdo = Some(azdo);
+    cfg.azdo = Some(azdo_cfg);
     cfg.save()?;
 
     println!("\n✅ Config saved to {}", crate::config::config_path().display());
-    println!("   Run `pilot config` to review, or `pilot open` to start.");
+    println!("\n   Next steps:");
+    println!("   1. Export your PAT:  export AZURE_DEVOPS_PAT=<your-pat>");
+    println!("   2. Add to tmux:      run-shell ~/path/to/tmux-pilot/pilot.tmux");
+    println!("   3. Launch:           pilot open  (or prefix+F in tmux)");
+    println!("\n   Run `pilot help` for all available commands.");
 
     Ok(true)
+}
+
+/// Password prompt (input hidden)
+fn password_prompt(label: &str) -> Result<String> {
+    eprint!("{} > ", label);
+    io::stderr().flush()?;
+
+    // Disable echo
+    enable_raw_mode()?;
+    let mut input = String::new();
+    loop {
+        if event::poll(std::time::Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Enter => break,
+                        KeyCode::Esc => {
+                            disable_raw_mode()?;
+                            eprintln!();
+                            bail!("Cancelled");
+                        }
+                        KeyCode::Backspace => { input.pop(); eprint!("\x08 \x08"); }
+                        KeyCode::Char(c) => { input.push(c); eprint!("•"); }
+                        _ => {}
+                    }
+                    io::stderr().flush()?;
+                }
+            }
+        }
+    }
+    disable_raw_mode()?;
+    eprintln!();
+    Ok(input)
 }
 
 /// Simple text prompt with optional default
@@ -97,6 +181,7 @@ fn text_prompt(label: &str, default: Option<&str>) -> Result<String> {
     } else {
         eprint!("  {} [{}] > ", label, default_display);
     }
+    io::stderr().flush()?;
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
@@ -147,7 +232,7 @@ fn pick_from_list(title: &str, items: &[String]) -> Result<String> {
                     Block::default()
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Gruvbox::GREEN))
-                        .title(format!(" {} ", title))
+                        .title(format!(" {} ({}) ", title, items.len()))
                         .title_style(
                             Style::default()
                                 .fg(Gruvbox::ORANGE)
@@ -185,7 +270,7 @@ fn pick_from_list(title: &str, items: &[String]) -> Result<String> {
             let help = Paragraph::new(Line::from(vec![
                 Span::styled(" j/k", Style::default().fg(Gruvbox::GREEN)),
                 Span::styled(" navigate  ", Style::default().fg(Gruvbox::GRAY)),
-                Span::styled("enter", Style::default().fg(Gruvbox::GREEN)),
+                Span::styled("⏎", Style::default().fg(Gruvbox::GREEN)),
                 Span::styled(" select  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("esc", Style::default().fg(Gruvbox::GREEN)),
                 Span::styled(" cancel", Style::default().fg(Gruvbox::GRAY)),

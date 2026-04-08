@@ -58,14 +58,51 @@ pub fn fetch_tasks(azdo: &AzdoConfig, store: &Store, parent_id: u64) -> Result<V
     Ok(items)
 }
 
+/// Fetch organizations for the authenticated user (used by setup wizard)
+pub fn fetch_organizations(pat: &str) -> Result<Vec<String>> {
+    // Step 1: Get user profile to obtain memberId
+    let profile_url = "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1";
+    let profile_body = curl_get(profile_url, pat)?;
+
+    #[derive(Deserialize)]
+    struct Profile { id: String }
+
+    let profile: Profile = serde_json::from_str(&profile_body)
+        .context("Failed to parse profile. Check your PAT.")?;
+
+    // Step 2: Get accounts (organizations) for this user
+    let accounts_url = format!(
+        "https://app.vssps.visualstudio.com/_apis/accounts?memberId={}&api-version=7.1",
+        profile.id
+    );
+    let accounts_body = curl_get(&accounts_url, pat)?;
+
+    #[derive(Deserialize)]
+    struct Resp { value: Vec<Acct> }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Acct { account_name: String }
+
+    let resp: Resp = serde_json::from_str(&accounts_body)
+        .context("Failed to parse organizations")?;
+    let mut names: Vec<String> = resp.value.into_iter().map(|a| a.account_name).collect();
+    names.sort();
+    Ok(names)
+}
+
 /// Fetch projects list (used by setup wizard)
 pub fn fetch_projects(org: &str) -> Result<Vec<String>> {
     let pat = get_pat()?;
+    fetch_projects_with_pat(org, &pat)
+}
+
+/// Fetch projects with an explicit PAT (for wizard before env is configured)
+pub fn fetch_projects_with_pat(org: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/_apis/projects?api-version=7.1&$top=100",
         org
     );
-    let body = curl_get(&url, &pat)?;
+    let body = curl_get(&url, pat)?;
 
     #[derive(Deserialize)]
     struct Resp { value: Vec<P> }
@@ -81,11 +118,16 @@ pub fn fetch_projects(org: &str) -> Result<Vec<String>> {
 /// Fetch teams for a project (used by setup wizard)
 pub fn fetch_teams(org: &str, project: &str) -> Result<Vec<String>> {
     let pat = get_pat()?;
+    fetch_teams_with_pat(org, project, &pat)
+}
+
+/// Fetch teams with an explicit PAT
+pub fn fetch_teams_with_pat(org: &str, project: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/{}/_apis/teams?api-version=7.1&$top=100",
         org, project
     );
-    let body = curl_get(&url, &pat)?;
+    let body = curl_get(&url, pat)?;
 
     #[derive(Deserialize)]
     struct Resp { value: Vec<T> }
@@ -101,11 +143,16 @@ pub fn fetch_teams(org: &str, project: &str) -> Result<Vec<String>> {
 /// Fetch area paths for a project (used by setup wizard)
 pub fn fetch_area_paths(org: &str, project: &str) -> Result<Vec<String>> {
     let pat = get_pat()?;
+    fetch_area_paths_with_pat(org, project, &pat)
+}
+
+/// Fetch area paths with an explicit PAT
+pub fn fetch_area_paths_with_pat(org: &str, project: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/{}/_apis/wit/classificationnodes/Areas?$depth=3&api-version=7.1",
         org, project
     );
-    let body = curl_get(&url, &pat)?;
+    let body = curl_get(&url, pat)?;
 
     #[derive(Deserialize)]
     struct Node { name: String, children: Option<Vec<Node>> }

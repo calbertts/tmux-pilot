@@ -1,170 +1,155 @@
-# tcs — tmux copilot sessions
+# tmux-pilot
 
-A tmux session manager for AI coding agents with Azure DevOps integration. Built in Rust with [ratatui](https://github.com/ratatui-org/ratatui).
+A tmux plugin for managing AI coding sessions with Azure DevOps integration. Built in Rust with [ratatui](https://github.com/ratatui-org/ratatui).
 
 Organize tmux **sessions** around AzDo **features** and **windows** around **user stories/bugs/tasks**. Auto-launch `copilot` CLI with work item context injection.
 
 ## Features
 
-- **Feature selector** (`prefix+F`) — grouped view: Active (linked to AzDo), AzDo-only (not yet started), Free sessions
-- **Task selector** (`prefix+T`) — grouped by type: Bugs 🐛, User Stories 📖, Tasks ✅, Free 💻. Clear new/existing differentiation
+- **Feature selector** (`prefix+F`) — grouped view: Active, AzDo-only, Free sessions
+- **Task selector** (`prefix+T`) — grouped by type: Bugs 🐛, User Stories 📖, Tasks ✅, Free 💻
 - **Dashboard** (`prefix+D`) — overview of all sessions with window previews
-- **View toggle** — press `o` to switch between Feature↔Task↔Dashboard views
-- **Copilot integration** — auto-launch `copilot --yolo -i "<context>"` with work item metadata
+- **Notification center** (`prefix+N`) — 🔔 in status bar, level icons, source tags
+- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube
+- **Detail view** — press `o` on any work item to read description + acceptance criteria
+- **Copilot integration** — auto-launch copilot with work item context injection
 - **AzDo integration** — fetch features/stories/bugs via REST API (curl-based, Zscaler-compatible)
 - **Fuzzy search** — type to filter in any view
-- **Async loading** — local data instant, AzDo fetched in background with spinner
-- **SQLite persistence** — session↔feature and window↔work-item mappings survive restarts
-- **Gruvbox Dark theme** — matches your tmux config
+- **Native notifications** — macOS, Windows, Linux desktop notifications
+- **SQLite persistence** — session mappings survive tmux restarts
 
 ## Installation
 
-### Build from source
+### 1. Build from source
 
 ```bash
-cd ~/code/siba/tmux-copilot-sessions
-HTTPS_PROXY=http://127.0.0.1:18080 cargo build --release
-cp target/release/tcs /opt/homebrew/bin/tcs
+cargo build --release
+cp target/release/pilot /usr/local/bin/pilot   # or anywhere in PATH
 ```
 
-> **Note**: The `HTTPS_PROXY` is needed if behind Zscaler (corporate proxy). Without it, `cargo` can't download crates.
+> **Note**: Behind a corporate proxy (Zscaler), you may need `HTTPS_PROXY=http://127.0.0.1:18080` for cargo.
 
-### tmux plugin setup
+### 2. Setup
+
+```bash
+pilot setup   # Interactive wizard: PAT → org → project → team → area path
+```
+
+### 3. tmux plugin
 
 Add to `~/.tmux.conf`:
 
 ```tmux
-run-shell ~/code/siba/tmux-copilot-sessions/tcs.tmux
+run-shell /path/to/tmux-pilot/pilot.tmux
 ```
 
 Then reload: `tmux source ~/.tmux.conf`
 
-The plugin auto-forwards `AZURE_DEVOPS_PAT` and `SIBA_*` env vars into the tmux server environment and binds the keybindings.
-
 ## Usage
+
+Run `pilot help-all` for the complete reference, or see below:
 
 ### CLI
 
 ```bash
-tcs              # Feature selector (default)
-tcs task         # Task selector (current session)
-tcs dash         # Dashboard
-tcs ls           # List sessions
-tcs free "Name"  # Create a free session
-tcs config       # Show config
-tcs setup        # Interactive setup wizard
+pilot              # Feature selector (default)
+pilot task         # Task selector
+pilot dash         # Dashboard
+pilot ls           # List sessions
+pilot free "Name"  # Free session
+pilot setup        # Setup wizard
+pilot config       # Show config
+pilot help-all     # Full reference
 ```
 
-### Keybindings (via tmux)
+### Notifications & Watchers
+
+```bash
+pilot notify "Build failed" -l error -s pipeline
+pilot watch pipeline --id 12345
+pilot watch pr-merge --id 678
+pilot watchers --tui
+```
+
+### tmux Keybindings
 
 | Key | Action |
 |-----|--------|
 | `prefix + F` | Feature selector |
 | `prefix + T` | Task selector |
 | `prefix + D` | Session dashboard |
+| `prefix + N` | Notification center |
+| `prefix + W` | Watcher manager |
 
 ### TUI Navigation
 
 | Key | Action |
 |-----|--------|
-| `j/k` or `↑/↓` | Navigate |
+| `j/k` `↑/↓` | Navigate |
 | `Enter` | Select / open / attach |
-| `o` | Toggle view (Feature↔Task↔Dashboard) |
-| `Ctrl+o` | Toggle view (from any view) |
-| `n` | New free session (feature selector) |
-| `c` | New copilot window (task selector) |
-| `t` | New terminal window (task selector) |
-| `d` | Kill session (dashboard) |
+| `o` | View detail / tasks |
+| `Ctrl+O` | Go back |
+| `Ctrl+N` | New session / copilot window |
+| `gg` / `G` | Jump to top / bottom |
+| Type | Fuzzy filter |
 | `q` / `Esc` | Quit |
-| Type anything | Fuzzy filter |
-| `Backspace` | Clear filter |
-
-### Visual guide
-
-**Feature Selector** groups:
-- `─── Active ───` — sessions linked to AzDo features (green, with window count)
-- `─── AzDo ───` — features without a local session yet (gray + `⊕ new`)
-- `─── Free ───` — sessions not linked to AzDo
-
-**Task Selector** groups:
-- `─── Bugs ───` — 🐛 yellow (existing) or gray (new)
-- `─── User Stories ───` — 📖 blue (existing) or gray (new)
-- `─── Tasks ───` — ✅ aqua (existing) or gray (new)
-- `─── Free ───` — 💻 unlinked windows
 
 ## Configuration
 
-Config lives at `~/Library/Application Support/tcs/config.toml` (macOS) or `~/.config/tcs/config.toml` (Linux).
+Config file: `~/.config/pilot/config.toml` (Linux) or `~/Library/Application Support/pilot/config.toml` (macOS).
 
-Copy the example:
-
-```bash
-cp config.example.toml "$(dirs config)/tcs/config.toml"
-```
-
-Or run `tcs setup` for an interactive wizard.
-
-### Key settings
+Run `pilot setup` for interactive configuration, or create manually:
 
 ```toml
 [copilot]
 bin = "copilot"
 yolo = true
 auto_launch = true
-default_agent = "-nn-bank-siba-ai-agents:siba-developer-agent"
-extra_flags = ["--add-dir", "~/code/siba"]
 
 [azdo]
-organization = "nn-bank"
-project = "SIBA-Transformation-DFJ"
-team = "nnb-siba-generic-team"
-# PAT from env: AZURE_DEVOPS_PAT
+organization = "my-org"
+project = "My-Project"
+team = "my-team"
 
 [azdo.filters]
-area_path = "SIBA-Transformation-DFJ\\nnb-siba-generic-team"
+iteration = "current"
 states = ["New", "Active", "Resolved"]
+area_paths = ["My-Project\\My-Team"]
+
+[notify]
+native = true
+ttl_days = 7
 ```
 
-### Environment variables
+### Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `AZURE_DEVOPS_PAT` | AzDo personal access token |
-| `SIBA_PROJECT_BACKLOG` | AzDo project name |
-| `SIBA_AREA_PATH` | Team area path |
-| `SIBA_TEAM` | Team name |
-| `SIBA_ORG` | AzDo organization |
-
-These are auto-detected if set. The `tcs.tmux` plugin forwards them into the tmux server.
+| `AZURE_DEVOPS_PAT` | AzDo personal access token (required) |
+| `PILOT_AZDO_ORG` | Override organization from config |
+| `PILOT_AZDO_PROJECT` | Override project from config |
+| `PILOT_AZDO_TEAM` | Override team from config |
+| `PILOT_AZDO_AREA` | Override area path filter |
+| `PILOT_CODE_PATH` | Auto-add `--add-dir` to copilot |
 
 ## Architecture
 
 ```
-tcs (3.8MB binary)
+pilot (~4MB binary)
 ├── TUI (ratatui + crossterm)
-│   ├── Feature Selector — grouped, fuzzy, visual_map navigation
-│   ├── Task Selector — grouped by work item type
-│   └── Dashboard — session overview
-├── tmux Controller — session/window CRUD via CLI
-├── Copilot Launcher — --yolo, --agent, -i context injection
-├── AzDo Client — REST via curl subprocess (bypasses Zscaler)
-├── SQLite Store — session/window mappings + AzDo cache (15min TTL)
+│   ├── Feature Selector — grouped, fuzzy, state badges
+│   ├── Task Selector — grouped by type, detail view
+│   ├── Dashboard — session overview
+│   ├── Notification Center — level icons, source tags
+│   └── Watcher Manager — status, stop, cleanup
+├── tmux Controller — session/window CRUD
+├── Copilot Launcher — context injection from work items
+├── AzDo Client — REST via curl (Zscaler-compatible)
+├── Notification System — SQLite → status bar → native OS
+├── Watcher Framework — pipeline, PR, SonarQube, custom monitors
+├── SQLite Store — sessions, notifications, watchers, AzDo cache
 └── Config — TOML + env var enrichment + setup wizard
 ```
-
-### Why curl instead of reqwest?
-
-Zscaler corporate proxy intercepts TLS at the process level. All Rust HTTP clients (reqwest with rustls-tls or native-tls) fail. The `curl` binary uses macOS SecureTransport which Zscaler trusts, so all AzDo API calls go through `curl` subprocess.
-
-## Tech Stack
-
-- **Rust 1.94+** (Homebrew)
-- **ratatui 0.29** + crossterm 0.28 — TUI
-- **clap 4** — CLI
-- **tokio 1** — async runtime
-- **rusqlite 0.32** (bundled) — SQLite
-- **nucleo-matcher 0.3** — fuzzy matching
-- **serde + toml** — config
 
 ## License
 
