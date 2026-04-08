@@ -93,6 +93,9 @@ pub struct App<'a> {
     // Detail view state
     detail_work_item: Option<WorkItem>,
     detail_scroll: u16,
+
+    // Demo mode: use fake data, no AzDo/tmux
+    demo: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,7 +165,7 @@ enum AzdoFetchResult {
 const SPINNER: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 impl<'a> App<'a> {
-    pub fn new(cfg: &'a AppConfig, store: Store, view: View) -> Self {
+    pub fn new(cfg: &'a AppConfig, store: Store, view: View, demo: bool) -> Self {
         Self {
             cfg,
             store,
@@ -194,6 +197,7 @@ impl<'a> App<'a> {
             pending_g: false,
             detail_work_item: None,
             detail_scroll: 0,
+            demo,
         }
     }
 
@@ -229,6 +233,9 @@ impl<'a> App<'a> {
 
     /// Load only local data (tmux + SQLite). Instant, no network.
     fn load_local_data(&mut self) -> Result<()> {
+        if self.demo {
+            return self.load_demo_data();
+        }
         match self.view {
             View::FeatureSelector => self.load_local_features()?,
             View::TaskSelector => self.load_local_tasks()?,
@@ -237,8 +244,179 @@ impl<'a> App<'a> {
         Ok(())
     }
 
+    /// Load demo data for all views (no tmux/AzDo needed)
+    fn load_demo_data(&mut self) -> Result<()> {
+        let demo_features = azdo::demo::demo_features();
+
+        match self.view {
+            View::FeatureSelector => {
+                // 3 features have sessions (Linked), 2 are AzDo-only, 1 free
+                self.features = vec![
+                    FeatureEntry {
+                        name: "#10001 OAuth 2.0 Authentication".to_string(),
+                        group: FeatureGroup::Linked,
+                        session_exists: true,
+                        window_count: 4,
+                        work_item: Some(demo_features[0].clone()),
+                    },
+                    FeatureEntry {
+                        name: "#10002 Real-time Collaboration Engine".to_string(),
+                        group: FeatureGroup::Linked,
+                        session_exists: true,
+                        window_count: 3,
+                        work_item: Some(demo_features[1].clone()),
+                    },
+                    FeatureEntry {
+                        name: "#10004 API Rate Limiting & Throttling".to_string(),
+                        group: FeatureGroup::Linked,
+                        session_exists: true,
+                        window_count: 2,
+                        work_item: Some(demo_features[3].clone()),
+                    },
+                    FeatureEntry {
+                        name: "#10003 Dashboard Analytics".to_string(),
+                        group: FeatureGroup::AzdoOnly,
+                        session_exists: false,
+                        window_count: 0,
+                        work_item: Some(demo_features[2].clone()),
+                    },
+                    FeatureEntry {
+                        name: "#10005 Multi-tenant Data Isolation".to_string(),
+                        group: FeatureGroup::AzdoOnly,
+                        session_exists: false,
+                        window_count: 0,
+                        work_item: Some(demo_features[4].clone()),
+                    },
+                    FeatureEntry {
+                        name: "scratch-pad".to_string(),
+                        group: FeatureGroup::Free,
+                        session_exists: true,
+                        window_count: 1,
+                        work_item: None,
+                    },
+                ];
+                self.sort_features();
+                self.update_feature_filter();
+                self.feature_list_state.select(self.first_selectable_row());
+            }
+            View::TaskSelector => {
+                let tasks = azdo::demo::demo_tasks_auth();
+                self.current_session = Some("#10001 OAuth 2.0 Authentication".to_string());
+                self.tasks = vec![
+                    TaskEntry {
+                        name: tasks[0].display_label(),
+                        group: TaskGroup::Bug,
+                        window_exists: true,
+                        window_index: Some(1),
+                        work_item: Some(tasks[0].clone()),
+                        copilot_session_id: Some("abc-123".to_string()),
+                    },
+                    TaskEntry {
+                        name: tasks[1].display_label(),
+                        group: TaskGroup::Bug,
+                        window_exists: false,
+                        window_index: None,
+                        work_item: Some(tasks[1].clone()),
+                        copilot_session_id: None,
+                    },
+                    TaskEntry {
+                        name: tasks[2].display_label(),
+                        group: TaskGroup::UserStory,
+                        window_exists: true,
+                        window_index: Some(2),
+                        work_item: Some(tasks[2].clone()),
+                        copilot_session_id: Some("def-456".to_string()),
+                    },
+                    TaskEntry {
+                        name: tasks[3].display_label(),
+                        group: TaskGroup::UserStory,
+                        window_exists: true,
+                        window_index: Some(3),
+                        work_item: Some(tasks[3].clone()),
+                        copilot_session_id: Some("ghi-789".to_string()),
+                    },
+                    TaskEntry {
+                        name: tasks[4].display_label(),
+                        group: TaskGroup::Task,
+                        window_exists: false,
+                        window_index: None,
+                        work_item: Some(tasks[4].clone()),
+                        copilot_session_id: None,
+                    },
+                    TaskEntry {
+                        name: tasks[5].display_label(),
+                        group: TaskGroup::Task,
+                        window_exists: true,
+                        window_index: Some(4),
+                        work_item: Some(tasks[5].clone()),
+                        copilot_session_id: Some("jkl-012".to_string()),
+                    },
+                    TaskEntry {
+                        name: "shell".to_string(),
+                        group: TaskGroup::Free,
+                        window_exists: true,
+                        window_index: Some(0),
+                        work_item: None,
+                        copilot_session_id: None,
+                    },
+                ];
+                self.sort_tasks();
+                self.update_task_filter();
+                self.task_list_state.select(self.first_selectable_task_row());
+            }
+            View::TaskDetail | View::Dashboard => {
+                self.dashboard_sessions = vec![
+                    DashboardEntry {
+                        session_name: "#10001 OAuth 2.0 Authentication".to_string(),
+                        window_count: 4,
+                        attached: true,
+                        windows: vec![
+                            "shell".to_string(),
+                            "🐛 #20001 Google OAuth Safari".to_string(),
+                            "📖 #20003 GitHub identity provider".to_string(),
+                            "📖 #20004 RBAC middleware".to_string(),
+                        ],
+                        work_item_id: Some(10001),
+                    },
+                    DashboardEntry {
+                        session_name: "#10002 Real-time Collaboration".to_string(),
+                        window_count: 3,
+                        attached: false,
+                        windows: vec![
+                            "shell".to_string(),
+                            "🐛 #20010 WebSocket idle drops".to_string(),
+                            "📖 #20011 CRDT text editing".to_string(),
+                        ],
+                        work_item_id: Some(10002),
+                    },
+                    DashboardEntry {
+                        session_name: "#10004 API Rate Limiting".to_string(),
+                        window_count: 2,
+                        attached: false,
+                        windows: vec!["shell".to_string(), "📖 Token bucket impl".to_string()],
+                        work_item_id: Some(10004),
+                    },
+                    DashboardEntry {
+                        session_name: "scratch-pad".to_string(),
+                        window_count: 1,
+                        attached: false,
+                        windows: vec!["shell".to_string()],
+                        work_item_id: None,
+                    },
+                ];
+                self.dashboard_list_state.select(Some(0));
+            }
+        }
+        Ok(())
+    }
+
     /// Spawn background AzDo fetch if configured.
     fn start_azdo_fetch(&mut self) {
+        // Demo mode already has all data loaded
+        if self.demo {
+            return;
+        }
+
         let azdo_cfg = match self.cfg.azdo.clone() {
             Some(cfg) if !cfg.organization.is_empty() && !cfg.project.is_empty() => cfg,
             _ => return,
@@ -1139,6 +1317,10 @@ impl<'a> App<'a> {
     // ─── Actions ───────────────────────────────────────────────
 
     fn select_feature(&mut self) -> Result<()> {
+        if self.demo {
+            self.status_msg = Some("Demo mode — select disabled".to_string());
+            return Ok(());
+        }
         if let Some(selected) = self.feature_list_state.selected() {
             // visual_map maps visual rows → feature indices (None = header/spacer)
             let idx = match self.visual_map.get(selected).copied().flatten() {
@@ -1211,6 +1393,10 @@ impl<'a> App<'a> {
     }
 
     fn select_task(&mut self) -> Result<()> {
+        if self.demo {
+            self.status_msg = Some("Demo mode — select disabled".to_string());
+            return Ok(());
+        }
         if let Some(selected) = self.task_list_state.selected() {
             let idx = match self.task_visual_map.get(selected).copied().flatten() {
                 Some(i) => i,

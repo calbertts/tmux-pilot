@@ -11,23 +11,23 @@ use crate::store::Store;
 pub use app::App;
 
 /// Run the feature selector TUI
-pub async fn run_feature_selector(cfg: &AppConfig) -> Result<()> {
+pub async fn run_feature_selector(cfg: &AppConfig, demo: bool) -> Result<()> {
     let store = Store::open()?;
-    let mut app = App::new(cfg, store, app::View::FeatureSelector);
+    let mut app = App::new(cfg, store, app::View::FeatureSelector, demo);
     app.run().await
 }
 
 /// Run the task selector TUI
-pub async fn run_task_selector(cfg: &AppConfig) -> Result<()> {
+pub async fn run_task_selector(cfg: &AppConfig, demo: bool) -> Result<()> {
     let store = Store::open()?;
-    let mut app = App::new(cfg, store, app::View::TaskSelector);
+    let mut app = App::new(cfg, store, app::View::TaskSelector, demo);
     app.run().await
 }
 
 /// Run the dashboard TUI
-pub async fn run_dashboard(cfg: &AppConfig) -> Result<()> {
+pub async fn run_dashboard(cfg: &AppConfig, demo: bool) -> Result<()> {
     let store = Store::open()?;
-    let mut app = App::new(cfg, store, app::View::Dashboard);
+    let mut app = App::new(cfg, store, app::View::Dashboard, demo);
     app.run().await
 }
 

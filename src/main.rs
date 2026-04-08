@@ -16,6 +16,10 @@ use store::Store;
 #[command(name = "pilot", about = "tmux session manager for AI coding agents")]
 #[command(version, long_about = None)]
 struct Cli {
+    /// Use demo data (no AzDo connection, fake sessions)
+    #[arg(long, global = true)]
+    demo: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -158,9 +162,9 @@ async fn main() -> Result<()> {
     }
 
     match cli.command.unwrap_or(Commands::Open) {
-        Commands::Open => tui::run_feature_selector(&cfg).await,
-        Commands::Task => tui::run_task_selector(&cfg).await,
-        Commands::Dash => tui::run_dashboard(&cfg).await,
+        Commands::Open => tui::run_feature_selector(&cfg, cli.demo).await,
+        Commands::Task => tui::run_task_selector(&cfg, cli.demo).await,
+        Commands::Dash => tui::run_dashboard(&cfg, cli.demo).await,
         Commands::List => list_sessions().await,
         Commands::Free { name } => create_free_session(&cfg, &name).await,
         Commands::Notify {
