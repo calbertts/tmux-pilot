@@ -133,9 +133,9 @@ pub fn fetch_area_paths(org: &str, project: &str) -> Result<Vec<String>> {
 
 /// Get PAT from environment
 fn get_pat() -> Result<String> {
-    std::env::var("TCS_AZDO_PAT")
-        .or_else(|_| std::env::var("AZURE_DEVOPS_PAT"))
-        .context("AzDo PAT not found. Set TCS_AZDO_PAT or AZURE_DEVOPS_PAT environment variable")
+    std::env::var("AZURE_DEVOPS_PAT")
+        .or_else(|_| std::env::var("PILOT_AZDO_PAT"))
+        .context("AzDo PAT not found. Set AZURE_DEVOPS_PAT or PILOT_AZDO_PAT environment variable")
 }
 
 // ─── HTTP via curl subprocess (bypasses Zscaler TLS interception) ──

@@ -22,13 +22,13 @@ use crate::tui::theme::Gruvbox;
 pub async fn run_wizard(cfg: &mut AppConfig) -> Result<bool> {
     // Check if PAT is available
     std::env::var("AZURE_DEVOPS_PAT")
-        .or_else(|_| std::env::var("TCS_AZDO_PAT"))
-        .context("No AzDo PAT found. Set AZURE_DEVOPS_PAT or TCS_AZDO_PAT first.")?;
+        .or_else(|_| std::env::var("PILOT_AZDO_PAT"))
+        .context("No AzDo PAT found. Set AZURE_DEVOPS_PAT or PILOT_AZDO_PAT first.")?;
 
-    println!("🔧 tcs setup wizard\n");
+    println!("🔧 pilot setup wizard\n");
 
     // Step 1: Organization
-    let org = text_prompt("AzDo organization", Some("nn-bank"))?;
+    let org = text_prompt("AzDo organization", None)?;
 
     // Step 2: Fetch projects and let user pick
     println!("\n  Fetching projects from {}...", org);
@@ -84,7 +84,7 @@ pub async fn run_wizard(cfg: &mut AppConfig) -> Result<bool> {
     cfg.save()?;
 
     println!("\n✅ Config saved to {}", crate::config::config_path().display());
-    println!("   Run `tcs config` to review, or `tcs open` to start.");
+    println!("   Run `pilot config` to review, or `pilot open` to start.");
 
     Ok(true)
 }

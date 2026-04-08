@@ -195,7 +195,7 @@ fn render(
     if watchers.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "  No watchers running. Use 'tcs watch <type> --id <id>' to start one.",
+                "  No watchers running. Use 'pilot watch <type> --id <id>' to start one.",
                 Style::default().fg(Gruvbox::GRAY),
             ))),
             chunks[2],

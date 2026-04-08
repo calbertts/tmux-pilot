@@ -60,7 +60,7 @@ impl Store {
     pub fn open() -> Result<Self> {
         let dir = data_dir();
         std::fs::create_dir_all(&dir)?;
-        let db_path = dir.join("tcs.db");
+        let db_path = dir.join("pilot.db");
         let conn = Connection::open(&db_path)
             .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 

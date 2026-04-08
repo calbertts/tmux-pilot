@@ -1,6 +1,5 @@
-# tcs - tmux copilot sessions
-# User configuration file
-# Copy to ~/.config/tcs/config.toml and customize
+# tmux-pilot configuration
+# Copy to ~/.config/pilot/config.toml and customize
 
 [copilot]
 # Path to the copilot binary
@@ -10,10 +9,10 @@ bin = "copilot"
 yolo = true
 
 # Default agent to use (user-specific, NOT a project default)
-# default_agent = "-nn-bank-siba-ai-agents:siba-developer-agent"
+# default_agent = "my-custom-agent"
 
 # Extra flags to pass to copilot on every launch
-# extra_flags = ["--add-dir", "~/code/siba"]
+# extra_flags = ["--add-dir", "~/code/my-project"]
 
 # Auto-launch copilot when creating new windows
 auto_launch = true
@@ -26,6 +25,8 @@ prompt_template = "I'm working on {type} #{id}: {title}"
 # organization = "my-org"
 # project = "My-Project"
 # team = "my-team"
+#
+# Or set via env vars: PILOT_AZDO_ORG, PILOT_AZDO_PROJECT, PILOT_AZDO_TEAM, PILOT_AZDO_AREA
 #
 # [azdo.filters]
 # iteration = "current"

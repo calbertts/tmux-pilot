@@ -13,7 +13,7 @@ mod wizard;
 use store::Store;
 
 #[derive(Parser)]
-#[command(name = "tcs", about = "tmux session manager for AI coding agents")]
+#[command(name = "pilot", about = "tmux session manager for AI coding agents")]
 #[command(version, long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("tcs=info".parse()?),
+                .add_directive("pilot=info".parse()?),
         )
         .with_target(false)
         .init();
@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
         Commands::Open | Commands::Task
     );
     if needs_azdo && cfg.azdo.is_none() {
-        eprintln!("⚠ AzDo not configured. Run `tcs setup` to connect to Azure DevOps.\n");
+        eprintln!("⚠ AzDo not configured. Run `pilot setup` to connect to Azure DevOps.\n");
     }
 
     match cli.command.unwrap_or(Commands::Open) {
@@ -256,7 +256,7 @@ pub fn send_native_notification(title: &str, body: Option<&str>) {
             .args([
                 "-e",
                 &format!(
-                    "display notification \"{}\" with title \"tcs\" subtitle \"{}\"",
+                    "display notification \"{}\" with title \"pilot\" subtitle \"{}\"",
                     body_text.replace('"', "\\\""),
                     title.replace('"', "\\\""),
                 ),
@@ -268,10 +268,10 @@ pub fn send_native_notification(title: &str, body: Option<&str>) {
             "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; \
              $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); \
              $text = $template.GetElementsByTagName('text'); \
-             $text.Item(0).AppendChild($template.CreateTextNode('tcs: {}')) > $null; \
+             $text.Item(0).AppendChild($template.CreateTextNode('pilot: {}')) > $null; \
              $text.Item(1).AppendChild($template.CreateTextNode('{}')) > $null; \
              $toast = [Windows.UI.Notifications.ToastNotification]::new($template); \
-             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('tcs').Show($toast)",
+             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('pilot').Show($toast)",
             title.replace('\'', "''"),
             body_text.replace('\'', "''"),
         );
@@ -282,8 +282,8 @@ pub fn send_native_notification(title: &str, body: Option<&str>) {
         // Linux: try notify-send (common on most distros)
         let _ = std::process::Command::new("notify-send")
             .args([
-                "--app-name=tcs",
-                &format!("tcs: {}", title),
+                "--app-name=pilot",
+                &format!("pilot: {}", title),
                 body_text,
             ])
             .output();
@@ -402,7 +402,7 @@ fn cmd_watch(
             watcher_type,
             interval
         );
-        eprintln!("   Use `tcs watchers` to list, `tcs watchers --stop <id>` to stop");
+        eprintln!("   Use `pilot watchers` to list, `pilot watchers --stop <id>` to stop");
         Ok(())
     }
 }

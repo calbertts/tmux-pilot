@@ -6,24 +6,24 @@ use anyhow::{Context, Result};
 
 pub use types::*;
 
-/// Returns the path to the user config file: ~/.config/tcs/config.toml
+/// Returns the path to the user config file: ~/.config/pilot/config.toml
 pub fn config_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("~/.config"))
-        .join("tcs")
+        .join("pilot")
         .join("config.toml")
 }
 
-/// Returns the path to session data: ~/.local/share/tcs/
+/// Returns the path to session data: ~/.local/share/pilot/
 pub fn data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("tcs")
+        .join("pilot")
 }
 
 impl AppConfig {
-    /// Load config from ~/.config/tcs/config.toml, falling back to defaults.
-    /// Then enrich with SIBA_* environment variables for any unset AzDo fields.
+    /// Load config from ~/.config/pilot/config.toml, falling back to defaults.
+    /// Then enrich with PILOT_* environment variables for any unset AzDo fields.
     pub fn load() -> Result<Self> {
         let path = config_path();
         let mut config = if path.exists() {
@@ -40,7 +40,7 @@ impl AppConfig {
         Ok(config)
     }
 
-    /// Fill in missing AzDo config from SIBA_* and AZURE_DEVOPS_PAT env vars
+    /// Fill from PILOT_* environment variables and AZURE_DEVOPS_PAT
     fn enrich_from_env(&mut self) {
         let env = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
 
@@ -48,29 +48,28 @@ impl AppConfig {
         let azdo = self.azdo.get_or_insert_with(AzdoConfig::default);
 
         if azdo.organization.is_empty() {
-            // SIBA uses nn-bank org; no env var for this, but it's the only org
-            if env("SIBA_PROJECT_BACKLOG").is_some() {
-                azdo.organization = "nn-bank".to_string();
+            if let Some(org) = env("PILOT_AZDO_ORG") {
+                azdo.organization = org;
             }
         }
         if azdo.project.is_empty() {
-            if let Some(project) = env("SIBA_PROJECT_BACKLOG") {
+            if let Some(project) = env("PILOT_AZDO_PROJECT") {
                 azdo.project = project;
             }
         }
         if azdo.team.is_none() {
-            if let Some(team) = env("SIBA_TEAM_NAME") {
+            if let Some(team) = env("PILOT_AZDO_TEAM") {
                 azdo.team = Some(team);
             }
         }
         if azdo.filters.area_paths.is_empty() {
-            if let Some(area) = env("SIBA_AREA_PATH") {
+            if let Some(area) = env("PILOT_AZDO_AREA") {
                 azdo.filters.area_paths = vec![area];
             }
         }
 
-        // If copilot extra_flags don't include --add-dir and SIBA_CODE_PATH is set, add it
-        if let Some(code_path) = env("SIBA_CODE_PATH") {
+        // If copilot extra_flags don't include --add-dir and PILOT_CODE_PATH is set, add it
+        if let Some(code_path) = env("PILOT_CODE_PATH") {
             let has_add_dir = self.copilot.extra_flags.iter().any(|f| f == "--add-dir");
             if !has_add_dir {
                 self.copilot.extra_flags.push("--add-dir".to_string());
