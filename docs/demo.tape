@@ -1,4 +1,5 @@
 # VHS tape for tmux-pilot demo GIF
+# Records the plugin running inside tmux as popup modals
 # Run with: vhs docs/demo.tape
 
 Output docs/screenshots/demo.gif
@@ -7,111 +8,107 @@ Set Shell "bash"
 Set FontFamily "Menlo"
 Set FontSize 18
 Set Width 1100
-Set Height 650
-Set Padding 16
+Set Height 700
+Set Padding 12
 Set Theme "Builtin Dark"
 Set TypingSpeed 50ms
 Set WindowBar Colorful
 Set WindowBarSize 40
 
-# ─── Feature Selector ───────────────────────────────────────────────
-Type "# Feature Selector — organize tmux sessions around work items"
+# Start a demo tmux server with custom keybindings for --demo mode
+Type `tmux -L demo new-session -s demo \; bind-key F display-popup -E -w 80% -h 80% 'pilot --demo' \; bind-key T display-popup -E -w 80% -h 80% 'pilot task --demo' \; bind-key D display-popup -E -w 80% -h 80% 'pilot dash --demo'`
 Enter
-Sleep 800ms
-
-Type "pilot --demo"
-Enter
-Sleep 2s
-
-# Navigate down through the list
-Down
-Sleep 400ms
-Down
-Sleep 400ms
-Down
-Sleep 400ms
-Down
-Sleep 400ms
-Down
-Sleep 400ms
-
-# Navigate back up
-Up
-Sleep 400ms
-Up
-Sleep 400ms
-Up
-Sleep 400ms
-
 Sleep 1.5s
 
-# Quit feature selector
+# ─── Feature Selector (prefix+F) ────────────────────────────────────
+Type "echo '🚀 prefix+F → Feature selector'"
+Enter
+Sleep 1s
+
+Ctrl+b
+Sleep 200ms
+Type "F"
+Sleep 2.5s
+
+Down
+Sleep 350ms
+Down
+Sleep 350ms
+Down
+Sleep 350ms
+Down
+Sleep 350ms
+Down
+Sleep 350ms
+Up
+Sleep 350ms
+Up
+Sleep 350ms
+Up
+Sleep 350ms
+
+Sleep 1.5s
 Type "q"
 Sleep 1s
 
-# ─── Task Selector ──────────────────────────────────────────────────
-Type "# Task Selector — bugs, stories, tasks for a feature"
+# ─── Task Selector (prefix+T) ───────────────────────────────────────
+Type "echo '📋 prefix+T → Task selector'"
 Enter
 Sleep 800ms
 
-Type "pilot task --demo"
-Enter
-Sleep 2s
+Ctrl+b
+Sleep 200ms
+Type "T"
+Sleep 2.5s
 
-# Navigate through tasks
 Down
-Sleep 400ms
+Sleep 350ms
 Down
-Sleep 400ms
+Sleep 350ms
 Down
-Sleep 400ms
+Sleep 350ms
 Down
-Sleep 400ms
+Sleep 350ms
 Down
-Sleep 400ms
+Sleep 350ms
 Down
-Sleep 400ms
-
+Sleep 350ms
 Up
-Sleep 400ms
+Sleep 350ms
 Up
-Sleep 400ms
-Up
-Sleep 400ms
+Sleep 350ms
 
 Sleep 1.5s
-
 Type "q"
 Sleep 1s
 
-# ─── Dashboard ───────────────────────────────────────────────────────
-Type "# Dashboard — overview of all sessions"
+# ─── Dashboard (prefix+D) ───────────────────────────────────────────
+Type "echo '📊 prefix+D → Dashboard'"
 Enter
 Sleep 800ms
 
-Type "pilot dash --demo"
-Enter
-Sleep 2s
+Ctrl+b
+Sleep 200ms
+Type "D"
+Sleep 2.5s
 
 Down
-Sleep 500ms
+Sleep 400ms
 Down
-Sleep 500ms
+Sleep 400ms
 Down
-Sleep 500ms
+Sleep 400ms
 
 Sleep 1.5s
-
 Type "q"
 Sleep 1s
 
 # ─── Help ─────────────────────────────────────────────────────────
-Type "# Full reference"
-Enter
-Sleep 800ms
-
 Type "pilot help-all"
 Enter
 Sleep 3s
 
+# Clean up
+Type "tmux -L demo kill-server"
+Enter
 Sleep 500ms
