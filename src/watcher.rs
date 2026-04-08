@@ -31,7 +31,10 @@ pub fn run_watcher(
     let cfg = config::AppConfig::load()?;
     let azdo = cfg.azdo.as_ref();
 
-    let watcher_id = format!("{}-{}", watcher_type, std::process::id());
+    let watcher_id = match &args.name {
+        Some(name) => name.clone(),
+        None => format!("{}-{}", watcher_type, std::process::id()),
+    };
 
     // Register in SQLite
     store.save_watcher(&crate::store::Watcher {
@@ -45,11 +48,11 @@ pub fn run_watcher(
     })?;
 
     let result = match watcher_type {
-        "pipeline" => watch_pipeline(&store, azdo, args, interval_secs),
-        "pr-merge" => watch_pr_merge(&store, azdo, args, interval_secs),
-        "pr-comments" => watch_pr_comments(&store, azdo, args, interval_secs),
-        "sonarqube" => watch_sonarqube(&store, &cfg, args, interval_secs),
-        "custom" => watch_custom(&store, args, interval_secs),
+        "pipeline" => watch_pipeline(&store, azdo, args, &watcher_id, interval_secs),
+        "pr-merge" => watch_pr_merge(&store, azdo, args, &watcher_id, interval_secs),
+        "pr-comments" => watch_pr_comments(&store, azdo, args, &watcher_id, interval_secs),
+        "sonarqube" => watch_sonarqube(&store, &cfg, args, &watcher_id, interval_secs),
+        "custom" => watch_custom(&store, args, &watcher_id, interval_secs),
         _ => bail!("Unknown watcher type: {}", watcher_type),
     };
 
@@ -63,6 +66,7 @@ pub struct WatcherArgs {
     pub id: Option<u64>,
     pub project_key: Option<String>,
     pub script: Option<String>,
+    pub name: Option<String>,
 }
 
 // ─── Pipeline watcher ────────────────────────────────────
@@ -71,13 +75,14 @@ fn watch_pipeline(
     store: &Store,
     azdo: Option<&config::AzdoConfig>,
     args: &WatcherArgs,
+    watcher_id: &str,
     interval: u64,
 ) -> Result<()> {
     let build_id = args.id.ok_or_else(|| anyhow::anyhow!("--id required for pipeline watcher"))?;
     let azdo = azdo.ok_or_else(|| anyhow::anyhow!("AzDo not configured"))?;
 
     loop {
-        store.update_watcher_check(&format!("pipeline-{}", std::process::id())).ok();
+        store.update_watcher_check(watcher_id).ok();
 
         let url = format!(
             "https://dev.azure.com/{}/{}/_apis/build/builds/{}?api-version=7.1",
@@ -115,13 +120,14 @@ fn watch_pr_merge(
     store: &Store,
     azdo: Option<&config::AzdoConfig>,
     args: &WatcherArgs,
+    watcher_id: &str,
     interval: u64,
 ) -> Result<()> {
     let pr_id = args.id.ok_or_else(|| anyhow::anyhow!("--id required for pr-merge watcher"))?;
     let azdo = azdo.ok_or_else(|| anyhow::anyhow!("AzDo not configured"))?;
 
     loop {
-        store.update_watcher_check(&format!("pr-merge-{}", std::process::id())).ok();
+        store.update_watcher_check(watcher_id).ok();
 
         let url = format!(
             "https://dev.azure.com/{}/{}/_apis/git/pullrequests/{}?api-version=7.1",
@@ -175,6 +181,7 @@ fn watch_pr_comments(
     store: &Store,
     azdo: Option<&config::AzdoConfig>,
     args: &WatcherArgs,
+    watcher_id: &str,
     interval: u64,
 ) -> Result<()> {
     let pr_id = args.id.ok_or_else(|| anyhow::anyhow!("--id required for pr-comments watcher"))?;
@@ -183,7 +190,7 @@ fn watch_pr_comments(
     let mut last_count: Option<u64> = None;
 
     loop {
-        store.update_watcher_check(&format!("pr-comments-{}", std::process::id())).ok();
+        store.update_watcher_check(watcher_id).ok();
 
         let url = format!(
             "https://dev.azure.com/{}/{}/_apis/git/repositories/{}/pullRequests/{}/threads?api-version=7.1",
@@ -235,6 +242,7 @@ fn watch_sonarqube(
     store: &Store,
     cfg: &config::AppConfig,
     args: &WatcherArgs,
+    watcher_id: &str,
     interval: u64,
 ) -> Result<()> {
     let project_key = args
@@ -256,7 +264,7 @@ fn watch_sonarqube(
     };
 
     loop {
-        store.update_watcher_check(&format!("sonarqube-{}", std::process::id())).ok();
+        store.update_watcher_check(watcher_id).ok();
 
         let url = format!("{}{}", sonar_url, api_path);
         let output = Command::new("curl")
@@ -310,6 +318,7 @@ fn watch_sonarqube(
 fn watch_custom(
     store: &Store,
     args: &WatcherArgs,
+    watcher_id: &str,
     interval: u64,
 ) -> Result<()> {
     let script = args
@@ -318,7 +327,7 @@ fn watch_custom(
         .ok_or_else(|| anyhow::anyhow!("--script required for custom watcher"))?;
 
     loop {
-        store.update_watcher_check(&format!("custom-{}", std::process::id())).ok();
+        store.update_watcher_check(watcher_id).ok();
 
         let output = Command::new("bash")
             .args(["-c", script])

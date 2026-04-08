@@ -20,6 +20,10 @@ struct Cli {
     #[arg(long, global = true)]
     demo: bool,
 
+    /// Auto-animate demo (navigate + exit automatically)
+    #[arg(long, global = true)]
+    demo_auto: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -86,6 +90,9 @@ enum Commands {
         /// Custom script to run
         #[arg(long)]
         script: Option<String>,
+        /// Human-readable name (defaults to type-PID)
+        #[arg(long)]
+        name: Option<String>,
         /// Poll interval in seconds
         #[arg(long, default_value = "120")]
         interval: u64,
@@ -161,10 +168,12 @@ async fn main() -> Result<()> {
         eprintln!("⚠ AzDo not configured. Run `pilot setup` to connect to Azure DevOps.\n");
     }
 
+    let demo = cli.demo || cli.demo_auto;
+
     match cli.command.unwrap_or(Commands::Open) {
-        Commands::Open => tui::run_feature_selector(&cfg, cli.demo).await,
-        Commands::Task => tui::run_task_selector(&cfg, cli.demo).await,
-        Commands::Dash => tui::run_dashboard(&cfg, cli.demo).await,
+        Commands::Open => tui::run_feature_selector(&cfg, demo, cli.demo_auto).await,
+        Commands::Task => tui::run_task_selector(&cfg, demo, cli.demo_auto).await,
+        Commands::Dash => tui::run_dashboard(&cfg, demo, cli.demo_auto).await,
         Commands::List => list_sessions().await,
         Commands::Free { name } => create_free_session(&cfg, &name).await,
         Commands::Notify {
@@ -185,9 +194,10 @@ async fn main() -> Result<()> {
             id,
             project_key,
             script,
+            name,
             interval,
             foreground,
-        } => cmd_watch(&watcher_type, id, project_key, script, interval, foreground),
+        } => cmd_watch(&watcher_type, id, project_key, script, name, interval, foreground),
         Commands::Watchers { stop, cleanup, tui: show_tui } => cmd_watchers(stop, cleanup, show_tui),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
@@ -390,6 +400,7 @@ fn cmd_watch(
     id: Option<u64>,
     project_key: Option<String>,
     script: Option<String>,
+    name: Option<String>,
     interval: u64,
     foreground: bool,
 ) -> Result<()> {
@@ -397,6 +408,7 @@ fn cmd_watch(
         id,
         project_key,
         script,
+        name,
     };
 
     if foreground {
@@ -424,6 +436,10 @@ fn cmd_watch(
             cmd_args.push("--script".to_string());
             cmd_args.push(s.clone());
         }
+        if let Some(ref n) = args.name {
+            cmd_args.push("--name".to_string());
+            cmd_args.push(n.clone());
+        }
 
         let child = std::process::Command::new(&exe)
             .args(&cmd_args)
@@ -432,10 +448,11 @@ fn cmd_watch(
             .stderr(std::process::Stdio::null())
             .spawn()?;
 
+        let display_name = args.name.as_deref().unwrap_or(watcher_type);
         eprintln!(
             "👁 Watcher started in background (pid: {}, type: {}, interval: {}s)",
             child.id(),
-            watcher_type,
+            display_name,
             interval
         );
         eprintln!("   Use `pilot watchers` to list, `pilot watchers --stop <id>` to stop");
@@ -501,10 +518,11 @@ fn show_help_all() -> Result<()> {
     pilot watch pr-comments --id 678    Watch PR for new comments
     pilot watch sonarqube --project-key KEY  Watch quality gate
     pilot watch custom --script "cmd"   Run custom check
+      --name NAME               Human-readable watcher name
       --interval 120              Poll interval in seconds
     pilot watchers                List active watchers
     pilot watchers --tui          Interactive watcher manager
-    pilot watchers --stop ID      Stop a watcher
+    pilot watchers --stop ID      Stop a watcher (ID or name)
     pilot watchers --cleanup      Remove dead entries
 
   ━━━ tmux Keybindings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
