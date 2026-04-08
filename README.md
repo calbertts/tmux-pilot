@@ -6,7 +6,7 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 
 ## Demo
 
-<p align="center"><img src="docs/screenshots/demo.gif" width="800" /></p>
+<p align="center"><img src="docs/screenshots/demo.gif?v=3" width="800" /></p>
 
 > Feature selector → Task selector → Dashboard → Help reference. Run `pilot --demo` to try it yourself.
 
