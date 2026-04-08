@@ -54,6 +54,7 @@ pub struct Watcher {
     pub status: String,
     pub started_at: String,
     pub last_check_at: Option<String>,
+    pub last_output: Option<String>,
 }
 
 impl Store {
@@ -117,10 +118,17 @@ impl Store {
                 pid             INTEGER,
                 status          TEXT DEFAULT 'running',
                 started_at      TEXT DEFAULT (datetime('now')),
-                last_check_at   TEXT
+                last_check_at   TEXT,
+                last_output     TEXT
             );
             ",
         )?;
+
+        // Incremental migrations for existing databases
+        self.conn.execute_batch(
+            "ALTER TABLE watchers ADD COLUMN last_output TEXT;"
+        ).ok(); // ignore if column already exists
+
         Ok(())
     }
 
@@ -400,14 +408,15 @@ impl Store {
 
     pub fn save_watcher(&self, watcher: &Watcher) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO watchers (id, watcher_type, config, pid, status)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR REPLACE INTO watchers (id, watcher_type, config, pid, status, last_output)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 watcher.id,
                 watcher.watcher_type,
                 watcher.config,
                 watcher.pid,
                 watcher.status,
+                watcher.last_output,
             ],
         )?;
         Ok(())
@@ -415,7 +424,7 @@ impl Store {
 
     pub fn list_watchers(&self) -> Result<Vec<Watcher>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, watcher_type, config, pid, status, started_at, last_check_at
+            "SELECT id, watcher_type, config, pid, status, started_at, last_check_at, last_output
              FROM watchers ORDER BY started_at DESC",
         )?;
         let rows = stmt
@@ -428,6 +437,7 @@ impl Store {
                     status: row.get(4)?,
                     started_at: row.get(5)?,
                     last_check_at: row.get(6)?,
+                    last_output: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -446,6 +456,14 @@ impl Store {
         self.conn.execute(
             "UPDATE watchers SET last_check_at = datetime('now') WHERE id = ?1",
             params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_watcher_output(&self, id: &str, output: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE watchers SET last_output = ?1, last_check_at = datetime('now') WHERE id = ?2",
+            params![output, id],
         )?;
         Ok(())
     }

@@ -45,6 +45,7 @@ pub fn run_watcher(
         status: "running".to_string(),
         started_at: String::new(),
         last_check_at: None,
+        last_output: None,
     })?;
 
     let result = match watcher_type {
@@ -334,9 +335,15 @@ fn watch_custom(
             .output();
 
         if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let first_line = stdout.lines().next().unwrap_or("").trim();
+
+            if !first_line.is_empty() {
+                store.update_watcher_output(watcher_id, first_line).ok();
+            }
+
             if out.status.success() {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let title = stdout.lines().next().unwrap_or("Custom watcher triggered");
+                let title = if first_line.is_empty() { "Custom watcher triggered" } else { first_line };
                 let body = if stdout.lines().count() > 1 {
                     Some(stdout.lines().skip(1).collect::<Vec<_>>().join("\n"))
                 } else {
@@ -383,14 +390,27 @@ pub fn list_watchers() -> Result<()> {
         } else {
             &w.status
         };
-        println!(
-            "  {} [{}] {} (pid: {}, since: {})",
-            w.id,
-            status,
-            w.watcher_type,
-            w.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string()),
-            &w.started_at[..16.min(w.started_at.len())],
-        );
+        let output_str = w.last_output.as_deref().unwrap_or("");
+        if output_str.is_empty() {
+            println!(
+                "  {} [{}] {} (pid: {}, since: {})",
+                w.id,
+                status,
+                w.watcher_type,
+                w.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string()),
+                &w.started_at[..16.min(w.started_at.len())],
+            );
+        } else {
+            println!(
+                "  {} [{}] {} — {} (pid: {}, since: {})",
+                w.id,
+                status,
+                w.watcher_type,
+                output_str,
+                w.pid.map(|p| p.to_string()).unwrap_or_else(|| "-".to_string()),
+                &w.started_at[..16.min(w.started_at.len())],
+            );
+        }
     }
     Ok(())
 }

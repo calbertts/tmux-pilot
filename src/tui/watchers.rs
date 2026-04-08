@@ -228,7 +228,7 @@ fn render(
                         Style::default().fg(Gruvbox::DARK_GRAY),
                     ),
                     Span::styled(
-                        format!("  {}  ", w.config),
+                        format!("  {}  ", w.last_output.as_deref().unwrap_or(&w.config)),
                         Style::default().fg(Gruvbox::GRAY),
                     ),
                     Span::styled(time, Style::default().fg(Gruvbox::DARK_GRAY)),
