@@ -50,17 +50,39 @@ fn build_prompt(template: &str, wi: &WorkItem) -> String {
     prompt
 }
 
+/// Wrap a copilot command with session ID capture logic.
+/// After copilot exits, detects the new session directory and links it
+/// to the current tmux session/window via `pilot session-link`.
+pub fn wrap_with_session_capture(copilot_cmd: &str) -> String {
+    format!(
+        concat!(
+            "_PILOT_PRE=$(ls ~/.copilot/session-state 2>/dev/null|sort); ",
+            "{}; ",
+            "_PILOT_POST=$(comm -13 <(echo \"$_PILOT_PRE\") ",
+            "<(ls ~/.copilot/session-state 2>/dev/null|sort)|head -1); ",
+            "[ -n \"$_PILOT_POST\" ] && pilot session-link ",
+            "\"$(tmux display-message -p '#S')\" ",
+            "\"$(tmux display-message -p '#W')\" ",
+            "\"$_PILOT_POST\" 2>/dev/null; ",
+            "unset _PILOT_PRE _PILOT_POST 2>/dev/null"
+        ),
+        copilot_cmd
+    )
+}
+
 /// Launch copilot in the currently active tmux pane
 pub fn launch_in_current_pane(cfg: &AppConfig, work_item: Option<&WorkItem>) -> Result<()> {
     let command = build_command(cfg, work_item);
-    crate::tmux::send_keys("", &command)?;
+    let wrapped = wrap_with_session_capture(&command);
+    crate::tmux::send_keys("", &wrapped)?;
     Ok(())
 }
 
 /// Launch copilot in a specific tmux target (session:window.pane)
 pub fn launch_in_target(cfg: &AppConfig, target: &str, work_item: Option<&WorkItem>) -> Result<()> {
     let command = build_command(cfg, work_item);
-    crate::tmux::send_keys(target, &command)?;
+    let wrapped = wrap_with_session_capture(&command);
+    crate::tmux::send_keys(target, &wrapped)?;
     Ok(())
 }
 
@@ -80,6 +102,14 @@ pub fn build_resume_command(cfg: &AppConfig, session_id: &str) -> String {
     parts.push(format!("--resume={}", session_id));
 
     parts.join(" ")
+}
+
+/// Launch copilot with --resume in a target pane (for restore)
+pub fn resume_in_target(cfg: &AppConfig, target: &str, session_id: &str) -> Result<()> {
+    let command = build_resume_command(cfg, session_id);
+    // No capture wrapper needed — we already have the session ID
+    crate::tmux::send_keys(target, &command)?;
+    Ok(())
 }
 
 #[cfg(test)]

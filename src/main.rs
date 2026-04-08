@@ -108,6 +108,18 @@ enum Commands {
     /// Show detailed help with all features and keybindings
     #[command(name = "help-all")]
     HelpAll,
+    /// Link a copilot session ID to a tmux window (internal use)
+    #[command(name = "session-link", hide = true)]
+    SessionLink {
+        /// tmux session name
+        session_name: String,
+        /// tmux window name
+        window_name: String,
+        /// copilot session UUID
+        copilot_session_id: String,
+    },
+    /// Restore copilot sessions after a tmux restart
+    Restore,
 }
 
 #[tokio::main]
@@ -125,6 +137,11 @@ async fn main() -> Result<()> {
     // Short-circuit for help-all (no config needed)
     if matches!(cli.command, Some(Commands::HelpAll)) {
         return show_help_all();
+    }
+
+    // Short-circuit for session-link (internal, no config needed)
+    if let Some(Commands::SessionLink { session_name, window_name, copilot_session_id }) = cli.command {
+        return cmd_session_link(&session_name, &window_name, &copilot_session_id);
     }
 
     let mut cfg = config::AppConfig::load()?;
@@ -169,6 +186,8 @@ async fn main() -> Result<()> {
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
         Commands::HelpAll => show_help_all(),
+        Commands::SessionLink { .. } => unreachable!(), // handled above
+        Commands::Restore => cmd_restore(&cfg),
     }
 }
 
@@ -452,6 +471,7 @@ fn show_help_all() -> Result<()> {
     pilot free "Name"         Create a free session (no AzDo link)
     pilot config              Show current configuration
     pilot setup               Interactive setup wizard
+    pilot restore             Restore copilot sessions after tmux restart
 
   ━━━ Notifications ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -539,4 +559,84 @@ fn show_help_all() -> Result<()> {
 "#;
     print!("{}", help);
     Ok(())
+}
+
+fn cmd_session_link(session_name: &str, window_name: &str, copilot_session_id: &str) -> Result<()> {
+    let store = Store::open()?;
+    store.upsert_copilot_session_id(session_name, window_name, copilot_session_id)?;
+    Ok(())
+}
+
+fn cmd_restore(cfg: &config::AppConfig) -> Result<()> {
+    let store = Store::open()?;
+    let mappings = store.get_all_window_mappings_with_sessions()?;
+
+    if mappings.is_empty() {
+        println!("No copilot sessions to restore.");
+        return Ok(());
+    }
+
+    let sessions = tmux::list_sessions()?;
+    let session_names: std::collections::HashSet<String> =
+        sessions.iter().map(|s| s.name.clone()).collect();
+
+    let session_state_dir = dirs::home_dir()
+        .map(|h| h.join(".copilot/session-state"));
+
+    let mut restored = 0;
+    for mapping in &mappings {
+        if !session_names.contains(&mapping.session_name) {
+            continue;
+        }
+
+        let windows = match tmux::list_windows(&mapping.session_name) {
+            Ok(w) => w,
+            Err(_) => continue,
+        };
+        if !windows.iter().any(|w| w.name == mapping.window_name) {
+            continue;
+        }
+
+        let target = format!("{}:{}", mapping.session_name, mapping.window_name);
+        if is_copilot_running(&target) {
+            continue;
+        }
+
+        let session_id = match &mapping.copilot_session_id {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // Verify the copilot session state dir still exists
+        if let Some(ref base) = session_state_dir {
+            if !base.join(session_id).exists() {
+                continue;
+            }
+        }
+
+        if copilot::resume_in_target(cfg, &target, session_id).is_ok() {
+            restored += 1;
+        }
+    }
+
+    if restored > 0 {
+        println!("✓ Restored {} copilot session(s)", restored);
+    } else {
+        println!("No copilot sessions needed restoring.");
+    }
+    Ok(())
+}
+
+/// Check if copilot (or node, which copilot runs as) is active in a pane
+fn is_copilot_running(target: &str) -> bool {
+    std::process::Command::new("tmux")
+        .args(["display-message", "-t", target, "-p", "#{pane_current_command}"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|cmd| {
+            let cmd = cmd.trim();
+            cmd == "node" || cmd.contains("copilot")
+        })
+        .unwrap_or(false)
 }

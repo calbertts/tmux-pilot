@@ -249,6 +249,50 @@ impl Store {
         Ok(())
     }
 
+    /// Update or insert a copilot session ID for a tmux window.
+    /// If no window_mapping exists, creates one with type 'copilot'.
+    pub fn upsert_copilot_session_id(
+        &self,
+        session_name: &str,
+        window_name: &str,
+        copilot_session_id: &str,
+    ) -> Result<()> {
+        let updated = self.conn.execute(
+            "UPDATE window_mappings SET copilot_session_id = ?1
+             WHERE session_name = ?2 AND window_name = ?3",
+            params![copilot_session_id, session_name, window_name],
+        )?;
+        if updated == 0 {
+            self.conn.execute(
+                "INSERT INTO window_mappings (session_name, window_name, copilot_session_id, window_type)
+                 VALUES (?1, ?2, ?3, 'copilot')",
+                params![session_name, window_name, copilot_session_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_all_window_mappings_with_sessions(&self) -> Result<Vec<WindowMapping>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_name, window_name, work_item_id, work_item_title, work_item_type, copilot_session_id, window_type
+             FROM window_mappings WHERE copilot_session_id IS NOT NULL ORDER BY session_name, window_name",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(WindowMapping {
+                    session_name: row.get(0)?,
+                    window_name: row.get(1)?,
+                    work_item_id: row.get(2)?,
+                    work_item_title: row.get(3)?,
+                    work_item_type: row.get(4)?,
+                    copilot_session_id: row.get(5)?,
+                    window_type: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     // ─── AzDo cache ──────────────────────────────────────────
 
     pub fn get_cached(&self, key: &str, max_age_minutes: i64) -> Result<Option<String>> {

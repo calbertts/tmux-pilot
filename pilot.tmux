@@ -66,3 +66,13 @@ NOTIF_SEGMENT="#($PILOT_BIN notifications --count --format tmux)"
 if [[ "$CURRENT_STATUS_RIGHT" != *"pilot notifications"* ]]; then
     tmux set-option -g status-right "${NOTIF_SEGMENT}${CURRENT_STATUS_RIGHT}"
 fi
+
+# Auto-restore copilot sessions after tmux server restart.
+# Uses tmux server PID as marker — only runs once per server lifetime.
+TMUX_PID=$(tmux display-message -p '#{pid}')
+RESTORE_MARKER="/tmp/pilot-restored-${TMUX_PID}"
+if [ ! -f "$RESTORE_MARKER" ]; then
+    touch "$RESTORE_MARKER"
+    # Delay to let tmux-resurrect finish restoring sessions first
+    tmux run-shell -b "sleep 5 && $PILOT_BIN restore 2>/dev/null"
+fi
