@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="412">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .term { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; }
+      .bold { font-weight: 700; }
+    </style>
+  </defs>
+  <!-- Window frame -->
+  <rect width="700" height="412" rx="10" fill="#282828" />
+  <!-- Title bar -->
+  <rect width="700" height="38" rx="10" fill="#1d2021" />
+  <rect x="0" y="28" width="700" height="10" fill="#1d2021" />
+  <!-- Traffic lights -->
+  <circle cx="20" cy="19" r="6" fill="#ff5f57"/>
+  <circle cx="40" cy="19" r="6" fill="#febc2e"/>
+  <circle cx="60" cy="19" r="6" fill="#28c840"/>
+  <!-- Title text -->
+  <text x="350" y="23" text-anchor="middle" fill="#928374" class="term" font-size="12">pilot restore — Session Persistence</text>
+  <!-- Content -->
+  <g transform="translate(16, 50)">
+    <text x="0.0" y="13" fill="#928374" class="term">$ </text>
+    <text x="15.6" y="13" fill="#b8bb26" class="term">pilot scan</text>
+    <text x="0.0" y="33" fill="#ebdbb2" class="term">pilot: scanned 11 copilot session(s)</text>
+    <text x="0.0" y="73" fill="#928374" class="term">$ </text>
+    <text x="15.6" y="73" fill="#b8bb26" class="term">pilot restore</text>
+    <text x="0.0" y="93" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="93" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="93" fill="#ebdbb2" class="term"> Internal Transfers / Bug #265793  → </text>
+    <text x="312.0" y="93" fill="#83a598" class="term">copilot --resume=2c7f27e1</text>
+    <text x="0.0" y="113" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="113" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="113" fill="#ebdbb2" class="term"> Internal Transfers / Bug #265794  → </text>
+    <text x="312.0" y="113" fill="#83a598" class="term">copilot --resume=70d68c8a</text>
+    <text x="0.0" y="133" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="133" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="133" fill="#ebdbb2" class="term"> Internal Transfers / Bug #265795  → </text>
+    <text x="312.0" y="133" fill="#83a598" class="term">copilot --resume=87b1f249</text>
+    <text x="0.0" y="153" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="153" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="153" fill="#ebdbb2" class="term"> Internal Transfers / Bug #265796  → </text>
+    <text x="312.0" y="153" fill="#83a598" class="term">copilot --resume=ed8e42ce</text>
+    <text x="0.0" y="173" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="173" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="173" fill="#ebdbb2" class="term"> AI Agents &amp; Tooling / Europort    → </text>
+    <text x="312.0" y="173" fill="#83a598" class="term">copilot --resume=1e5cc60d</text>
+    <text x="0.0" y="193" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="193" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="193" fill="#ebdbb2" class="term"> AI Agents &amp; Tooling / Voice       → </text>
+    <text x="312.0" y="193" fill="#83a598" class="term">copilot --resume=cc1cac71</text>
+    <text x="0.0" y="213" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="213" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="213" fill="#ebdbb2" class="term"> AI Agents &amp; Tooling / Leaderboard → </text>
+    <text x="312.0" y="213" fill="#83a598" class="term">copilot --resume=692f72fd</text>
+    <text x="0.0" y="233" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="233" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="233" fill="#ebdbb2" class="term"> Add Fixed Term / US #265225       → </text>
+    <text x="312.0" y="233" fill="#83a598" class="term">copilot --resume=db331931</text>
+    <text x="0.0" y="253" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="253" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="253" fill="#ebdbb2" class="term"> Add Fixed Term / Bug #264650      → </text>
+    <text x="312.0" y="253" fill="#83a598" class="term">copilot --resume=bd62c467</text>
+    <text x="0.0" y="273" fill="#ebdbb2" class="term">  </text>
+    <text x="15.6" y="273" fill="#b8bb26" class="term">✓</text>
+    <text x="23.4" y="273" fill="#ebdbb2" class="term"> Hackathon / Analysis              → </text>
+    <text x="312.0" y="273" fill="#83a598" class="term">copilot --resume=9b869504</text>
+    <text x="0.0" y="313" fill="#b8bb26" class="term">✓ Restored 10 copilot session(s)</text>
+  </g>
+</svg>

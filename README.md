@@ -4,6 +4,26 @@ A tmux plugin for managing AI coding sessions with Azure DevOps integration. Bui
 
 Organize tmux **sessions** around AzDo **features** and **windows** around **user stories/bugs/tasks**. Auto-launch `copilot` CLI with work item context injection.
 
+## Screenshots
+
+### Feature Selector (`prefix+F`)
+<p align="center"><img src="docs/screenshots/feature-selector.svg" width="660" /></p>
+
+### Task Selector (`prefix+T`)
+<p align="center"><img src="docs/screenshots/task-selector.svg" width="700" /></p>
+
+### Session Dashboard (`prefix+D`)
+<p align="center"><img src="docs/screenshots/dashboard.svg" width="660" /></p>
+
+### Notification Center (`prefix+N`)
+<p align="center"><img src="docs/screenshots/notifications.svg" width="620" /></p>
+
+### Session Persistence
+<p align="center"><img src="docs/screenshots/restore.svg" width="700" /></p>
+
+### Full Reference
+<p align="center"><img src="docs/screenshots/help.svg" width="620" /></p>
+
 ## Features
 
 - **Feature selector** (`prefix+F`) — grouped view: Active, AzDo-only, Free sessions
@@ -16,7 +36,8 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 - **AzDo integration** — fetch features/stories/bugs via REST API (curl-based, Zscaler-compatible)
 - **Fuzzy search** — type to filter in any view
 - **Native notifications** — macOS, Windows, Linux desktop notifications
-- **SQLite persistence** — session mappings survive tmux restarts
+- **Session persistence** — copilot sessions survive tmux restarts via `pilot scan` + `pilot restore`
+- **SQLite persistence** — session mappings, notifications, watchers, AzDo cache
 
 ## Installation
 

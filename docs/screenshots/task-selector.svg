@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="407">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .term { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 13px; }
+      .bold { font-weight: 700; }
+    </style>
+  </defs>
+  <!-- Window frame -->
+  <rect width="700" height="407" rx="10" fill="#282828" />
+  <!-- Title bar -->
+  <rect width="700" height="38" rx="10" fill="#1d2021" />
+  <rect x="0" y="28" width="700" height="10" fill="#1d2021" />
+  <!-- Traffic lights -->
+  <circle cx="20" cy="19" r="6" fill="#ff5f57"/>
+  <circle cx="40" cy="19" r="6" fill="#febc2e"/>
+  <circle cx="60" cy="19" r="6" fill="#28c840"/>
+  <!-- Title text -->
+  <text x="350" y="23" text-anchor="middle" fill="#928374" class="term" font-size="12">pilot — Task Selector (prefix+T)</text>
+  <!-- Content -->
+  <g transform="translate(16, 50)">
+    <text x="0.0" y="13" fill="#fabd2f" class="term bold">  Tasks for: Add Fixed Term Deposits                           </text>
+    <text x="0.0" y="55" fill="#928374" class="term">  Filter: </text>
+    <text x="0.0" y="97" fill="#b8bb26" class="term">  ● </text>
+    <text x="31.2" y="97" fill="#fe8019" class="term">📖 </text>
+    <text x="46.8" y="97" fill="#ebdbb2" class="term bold">US #265225 - Rename Operations</text>
+    <text x="280.8" y="97" fill="#ebdbb2" class="term">          </text>
+    <text x="358.8" y="97" fill="#b8bb26" class="term">Active</text>
+    <text x="0.0" y="118" fill="#b8bb26" class="term">  ● </text>
+    <text x="31.2" y="118" fill="#fe8019" class="term">📖 </text>
+    <text x="46.8" y="118" fill="#ebdbb2" class="term bold">US #265224 - CASH_ACCOUNT Mapping</text>
+    <text x="304.2" y="118" fill="#ebdbb2" class="term">        </text>
+    <text x="366.6" y="118" fill="#b8bb26" class="term">Active</text>
+    <text x="0.0" y="139" fill="#b8bb26" class="term">  ● </text>
+    <text x="31.2" y="139" fill="#fe8019" class="term">📖 </text>
+    <text x="46.8" y="139" fill="#ebdbb2" class="term">US #265217 - AFT External Service        </text>
+    <text x="366.6" y="139" fill="#b8bb26" class="term">Active</text>
+    <text x="0.0" y="160" fill="#fb4934" class="term">  ● </text>
+    <text x="31.2" y="160" fill="#fb4934" class="term">🐛 </text>
+    <text x="46.8" y="160" fill="#ebdbb2" class="term">Bug #264650 - GET /accountId             </text>
+    <text x="366.6" y="160" fill="#b8bb26" class="term">Active</text>
+    <text x="0.0" y="181" fill="#fb4934" class="term">  ● </text>
+    <text x="31.2" y="181" fill="#fb4934" class="term">🐛 </text>
+    <text x="46.8" y="181" fill="#ebdbb2" class="term">Bug #264536 - Fixed Deposits BLOCKED     </text>
+    <text x="366.6" y="181" fill="#fabd2f" class="term">Blocked</text>
+    <text x="0.0" y="202" fill="#928374" class="term">  ✔ </text>
+    <text x="31.2" y="202" fill="#fe8019" class="term">📖 </text>
+    <text x="46.8" y="202" fill="#928374" class="term">US #264100 - Initial Setup               Closed</text>
+    <text x="0.0" y="286" fill="#928374" class="term">  ↑/↓ navigate  │  Enter open  │  o detail  │  Ctrl+O back  │  q quit</text>
+    <text x="0.0" y="307" fill="#928374" class="term">  📖 Story  🐛 Bug  ✅ Task  │  Ctrl+N copilot  Ctrl+T terminal</text>
+  </g>
+</svg>
