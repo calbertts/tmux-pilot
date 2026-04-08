@@ -165,6 +165,26 @@ ttl_days = 7
 | `PILOT_AZDO_AREA` | Override area path filter |
 | `PILOT_CODE_PATH` | Auto-add `--add-dir` to copilot |
 
+## Bundled Copilot Skills
+
+tmux-pilot ships with copilot-cli skills that are **automatically installed** when the plugin loads.
+
+On first load (or after updates), `pilot.tmux` symlinks the bundled skills into `~/.copilot/skills/` so copilot-cli discovers them without manual setup.
+
+### pilot-watcher
+
+Enables copilot to launch and manage watchers (pipeline monitors, PR trackers, SonarQube checks) directly from the conversation:
+
+```
+> Start a watcher for pipeline build 12345
+> Show me active watchers
+> Stop the PR merge watcher
+```
+
+The skill is available in every copilot session automatically — no configuration needed.
+
+> **Note:** If you already have a `~/.copilot/skills/pilot-watcher` from a different source, the installer won't overwrite it. Remove it manually to use the bundled version.
+
 ## Architecture
 
 ```
@@ -181,6 +201,7 @@ pilot (~4MB binary)
 ├── Notification System — SQLite → status bar → native OS
 ├── Watcher Framework — pipeline, PR, SonarQube, custom monitors
 ├── SQLite Store — sessions, notifications, watchers, AzDo cache
+├── Bundled Skills — auto-installed to ~/.copilot/skills/
 └── Config — TOML + env var enrichment + setup wizard
 ```
 
