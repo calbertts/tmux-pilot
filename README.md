@@ -20,30 +20,42 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 
 ## Installation
 
-### 1. Build from source
-
-```bash
-cargo build --release
-cp target/release/pilot /usr/local/bin/pilot   # or anywhere in PATH
-```
-
-> **Note**: Behind a corporate proxy (Zscaler), you may need `HTTPS_PROXY=http://127.0.0.1:18080` for cargo.
-
-### 2. Setup
-
-```bash
-pilot setup   # Interactive wizard: PAT → org → project → team → area path
-```
-
-### 3. tmux plugin
+### Option A: TPM (recommended)
 
 Add to `~/.tmux.conf`:
 
 ```tmux
-run-shell /path/to/tmux-pilot/pilot.tmux
+set -g @plugin 'calbertts/tmux-pilot'
 ```
 
-Then reload: `tmux source ~/.tmux.conf`
+Run `prefix + I` to install. The binary is auto-downloaded from GitHub Releases.
+
+### Option B: Manual
+
+```bash
+git clone https://github.com/calbertts/tmux-pilot.git ~/.tmux/plugins/tmux-pilot
+```
+
+Add to `~/.tmux.conf`:
+
+```tmux
+run-shell ~/.tmux/plugins/tmux-pilot/pilot.tmux
+```
+
+Reload: `tmux source ~/.tmux.conf`
+
+The binary auto-downloads on first load. To build from source instead:
+
+```bash
+cd ~/.tmux/plugins/tmux-pilot
+cargo build --release
+```
+
+### Setup
+
+```bash
+pilot setup   # Interactive wizard: PAT → org → project → team → area path
+```
 
 ## Usage
 

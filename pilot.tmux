@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
 # tmux-pilot TPM plugin entry point
-# Installs keybindings for pilot
+# Installs keybindings and auto-downloads binary if needed
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PILOT_BIN="${CURRENT_DIR}/target/release/pilot"
+PILOT_BIN="${CURRENT_DIR}/bin/pilot"
 
-# Fall back to PATH if binary not in plugin dir
+# Fall back to cargo build output
+if [ ! -x "$PILOT_BIN" ]; then
+    PILOT_BIN="${CURRENT_DIR}/target/release/pilot"
+fi
+
+# Fall back to PATH
 if [ ! -x "$PILOT_BIN" ]; then
     PILOT_BIN="$(command -v pilot 2>/dev/null)"
 fi
 
-if [ -z "$PILOT_BIN" ]; then
-    tmux display-message "pilot: binary not found. Run 'cargo build --release' in ${CURRENT_DIR}"
-    exit 1
+# Auto-install from GitHub Releases if not found
+if [ -z "$PILOT_BIN" ] || [ ! -x "$PILOT_BIN" ]; then
+    tmux display-message "pilot: downloading binary..."
+    if bash "${CURRENT_DIR}/scripts/install.sh" "${CURRENT_DIR}/bin" >/dev/null 2>&1; then
+        PILOT_BIN="${CURRENT_DIR}/bin/pilot"
+        tmux display-message "pilot: installed successfully ✓"
+    else
+        tmux display-message "pilot: auto-install failed. Run: cd ${CURRENT_DIR} && cargo build --release"
+        exit 1
+    fi
 fi
 
 # Forward critical env vars into tmux server so display-popup inherits them
