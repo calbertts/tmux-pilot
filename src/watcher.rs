@@ -36,6 +36,9 @@ pub fn run_watcher(
         None => format!("{}-{}", watcher_type, std::process::id()),
     };
 
+    // Build restart command for persistent watchers
+    let restart_args = build_restart_args(watcher_type, args, interval_secs);
+
     // Register in SQLite
     store.save_watcher(&crate::store::Watcher {
         id: watcher_id.clone(),
@@ -46,6 +49,8 @@ pub fn run_watcher(
         started_at: String::new(),
         last_check_at: None,
         last_output: None,
+        persistent: args.persistent,
+        restart_args: Some(restart_args),
     })?;
 
     let result = match watcher_type {
@@ -57,9 +62,43 @@ pub fn run_watcher(
         _ => bail!("Unknown watcher type: {}", watcher_type),
     };
 
-    // Mark completed
-    store.update_watcher_status(&watcher_id, "completed").ok();
+    if args.persistent {
+        store.update_watcher_status(&watcher_id, "stopped").ok();
+    } else {
+        // Ephemeral: auto-delete from DB
+        store.delete_watcher(&watcher_id).ok();
+    }
     result
+}
+
+/// Build the CLI args needed to restart this watcher
+fn build_restart_args(watcher_type: &str, args: &WatcherArgs, interval: u64) -> String {
+    let mut parts = vec![
+        "watch".to_string(),
+        watcher_type.to_string(),
+        "--interval".to_string(),
+        interval.to_string(),
+    ];
+    if let Some(id) = args.id {
+        parts.push("--id".to_string());
+        parts.push(id.to_string());
+    }
+    if let Some(ref pk) = args.project_key {
+        parts.push("--project-key".to_string());
+        parts.push(pk.clone());
+    }
+    if let Some(ref s) = args.script {
+        parts.push("--script".to_string());
+        parts.push(s.clone());
+    }
+    if let Some(ref n) = args.name {
+        parts.push("--name".to_string());
+        parts.push(n.clone());
+    }
+    if args.persistent {
+        parts.push("--persistent".to_string());
+    }
+    parts.join("\x00") // null-separated for safe splitting
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +107,7 @@ pub struct WatcherArgs {
     pub project_key: Option<String>,
     pub script: Option<String>,
     pub name: Option<String>,
+    pub persistent: bool,
 }
 
 // ─── Pipeline watcher ────────────────────────────────────
@@ -327,6 +367,9 @@ fn watch_custom(
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--script required for custom watcher"))?;
 
+    // For persistent watchers: track last exit status to notify on transitions only
+    let mut last_success: Option<bool> = None;
+
     loop {
         store.update_watcher_check(watcher_id).ok();
 
@@ -342,24 +385,36 @@ fn watch_custom(
                 store.update_watcher_output(watcher_id, first_line).ok();
             }
 
-            if out.status.success() {
-                let title = if first_line.is_empty() { "Custom watcher triggered" } else { first_line };
-                let body = if stdout.lines().count() > 1 {
-                    Some(stdout.lines().skip(1).collect::<Vec<_>>().join("\n"))
-                } else {
-                    None
-                };
-                notify(
-                    store,
-                    "info",
-                    title,
-                    body.as_deref(),
-                    "custom",
-                    None,
-                );
-                break;
+            let success = out.status.success();
+
+            if args.persistent {
+                // Persistent: notify on state transitions (OK↔FAIL), never break
+                let transitioned = last_success.map(|prev| prev != success).unwrap_or(false);
+                if transitioned {
+                    if success {
+                        let title = if first_line.is_empty() { "Service recovered ✓" } else { first_line };
+                        notify(store, "success", title, None, "custom", None);
+                    } else {
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        let err_line = stderr.lines().next().unwrap_or("check failed");
+                        let title = if first_line.is_empty() { err_line } else { first_line };
+                        notify(store, "error", &format!("⚠ {}", title), None, "custom", None);
+                    }
+                }
+                last_success = Some(success);
+            } else {
+                // Ephemeral: break on success (condition met)
+                if success {
+                    let title = if first_line.is_empty() { "Custom watcher triggered" } else { first_line };
+                    let body = if stdout.lines().count() > 1 {
+                        Some(stdout.lines().skip(1).collect::<Vec<_>>().join("\n"))
+                    } else {
+                        None
+                    };
+                    notify(store, "info", title, body.as_deref(), "custom", None);
+                    break;
+                }
             }
-            // Non-zero exit = condition not met, keep polling
         }
 
         thread::sleep(Duration::from_secs(interval));
@@ -390,10 +445,12 @@ pub fn list_watchers() -> Result<()> {
         } else {
             &w.status
         };
+        let mode_icon = if w.persistent { "🔄" } else { "⚡" };
         let output_str = w.last_output.as_deref().unwrap_or("");
         if output_str.is_empty() {
             println!(
-                "  {} [{}] {} (pid: {}, since: {})",
+                "  {} {} [{}] {} (pid: {}, since: {})",
+                mode_icon,
                 w.id,
                 status,
                 w.watcher_type,
@@ -402,7 +459,8 @@ pub fn list_watchers() -> Result<()> {
             );
         } else {
             println!(
-                "  {} [{}] {} — {} (pid: {}, since: {})",
+                "  {} {} [{}] {} — {} (pid: {}, since: {})",
+                mode_icon,
                 w.id,
                 status,
                 w.watcher_type,
@@ -453,6 +511,66 @@ pub fn cleanup_watchers() -> Result<()> {
 
     if cleaned > 0 {
         eprintln!("Cleaned up {} dead watcher(s)", cleaned);
+    }
+    Ok(())
+}
+
+/// Resurrect persistent watchers that should be running but aren't.
+/// Called at tmux startup to survive restarts.
+pub fn resurrect_watchers() -> Result<()> {
+    let store = Store::open()?;
+    let watchers = store.list_watchers()?;
+    let mut resurrected = 0;
+
+    for w in &watchers {
+        if !w.persistent {
+            // Ephemeral dead watchers: clean up
+            let alive = w.pid.map(|p| is_process_alive(p)).unwrap_or(false);
+            if !alive && w.status == "running" {
+                store.delete_watcher(&w.id).ok();
+            }
+            continue;
+        }
+
+        // Persistent watcher: check if it needs resurrection
+        let alive = w.pid.map(|p| is_process_alive(p)).unwrap_or(false);
+        if alive {
+            continue; // already running
+        }
+
+        let args_str = match &w.restart_args {
+            Some(a) if !a.is_empty() => a.clone(),
+            _ => {
+                eprintln!("  ⚠ Persistent watcher '{}' has no restart args, skipping", w.id);
+                store.update_watcher_status(&w.id, "dead").ok();
+                continue;
+            }
+        };
+
+        // Delete old entry so the new process can re-register with same ID
+        store.delete_watcher(&w.id)?;
+
+        let args: Vec<&str> = args_str.split('\x00').collect();
+        let exe = std::env::current_exe()?;
+        match std::process::Command::new(&exe)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_child) => {
+                resurrected += 1;
+                eprintln!("  🔄 Resurrected watcher '{}'", w.id);
+            }
+            Err(e) => {
+                eprintln!("  ⚠ Failed to resurrect '{}': {}", w.id, e);
+            }
+        }
+    }
+
+    if resurrected > 0 {
+        eprintln!("Resurrected {} persistent watcher(s)", resurrected);
     }
     Ok(())
 }

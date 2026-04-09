@@ -93,6 +93,9 @@ enum Commands {
         /// Human-readable name (defaults to type-PID)
         #[arg(long)]
         name: Option<String>,
+        /// Keep running after condition met (for service monitoring)
+        #[arg(long)]
+        persistent: bool,
         /// Poll interval in seconds
         #[arg(long, default_value = "120")]
         interval: u64,
@@ -133,6 +136,9 @@ enum Commands {
     Restore,
     /// Scan running tmux panes and link active copilot sessions
     Scan,
+    /// Resurrect persistent watchers after restart
+    #[command(name = "resurrect-watchers", hide = true)]
+    ResurrectWatchers,
 }
 
 #[tokio::main]
@@ -195,9 +201,10 @@ async fn main() -> Result<()> {
             project_key,
             script,
             name,
+            persistent,
             interval,
             foreground,
-        } => cmd_watch(&watcher_type, id, project_key, script, name, interval, foreground),
+        } => cmd_watch(&watcher_type, id, project_key, script, name, persistent, interval, foreground),
         Commands::Watchers { stop, cleanup, tui: show_tui } => cmd_watchers(stop, cleanup, show_tui),
         Commands::Config => show_config(&cfg),
         Commands::Setup => wizard::run_wizard(&mut cfg).await.map(|_| ()),
@@ -205,6 +212,7 @@ async fn main() -> Result<()> {
         Commands::SessionLink { .. } => unreachable!(), // handled above
         Commands::Restore => cmd_restore(&cfg),
         Commands::Scan => cmd_scan(),
+        Commands::ResurrectWatchers => watcher::resurrect_watchers(),
     }
 }
 
@@ -418,6 +426,7 @@ fn cmd_watch(
     project_key: Option<String>,
     script: Option<String>,
     name: Option<String>,
+    persistent: bool,
     interval: u64,
     foreground: bool,
 ) -> Result<()> {
@@ -426,10 +435,12 @@ fn cmd_watch(
         project_key,
         script,
         name,
+        persistent,
     };
 
     if foreground {
-        eprintln!("👁 Starting {} watcher (foreground, interval: {}s)", watcher_type, interval);
+        let mode = if persistent { "persistent" } else { "ephemeral" };
+        eprintln!("👁 Starting {} watcher ({}, interval: {}s)", watcher_type, mode, interval);
         watcher::run_watcher(watcher_type, &args, interval)
     } else {
         // Re-launch self as a detached background process with --foreground
@@ -457,6 +468,9 @@ fn cmd_watch(
             cmd_args.push("--name".to_string());
             cmd_args.push(n.clone());
         }
+        if args.persistent {
+            cmd_args.push("--persistent".to_string());
+        }
 
         let child = std::process::Command::new(&exe)
             .args(&cmd_args)
@@ -466,10 +480,12 @@ fn cmd_watch(
             .spawn()?;
 
         let display_name = args.name.as_deref().unwrap_or(watcher_type);
+        let mode = if persistent { "persistent" } else { "ephemeral" };
         eprintln!(
-            "👁 Watcher started in background (pid: {}, type: {}, interval: {}s)",
+            "👁 Watcher started in background (pid: {}, {}, {}, interval: {}s)",
             child.id(),
             display_name,
+            mode,
             interval
         );
         eprintln!("   Use `pilot watchers` to list, `pilot watchers --stop <id>` to stop");

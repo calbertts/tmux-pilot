@@ -88,8 +88,8 @@ RESTORE_MARKER="/tmp/pilot-restored-${TMUX_PID}"
 if [ ! -f "$RESTORE_MARKER" ]; then
     touch "$RESTORE_MARKER"
     # Delay to let tmux-resurrect finish restoring sessions first
-    # Scan first (detects currently running copilots), then restore the rest
-    tmux run-shell -b "sleep 5 && $PILOT_BIN scan 2>/dev/null && $PILOT_BIN restore 2>/dev/null"
+    # Scan first (detects currently running copilots), then restore the rest, then resurrect persistent watchers
+    tmux run-shell -b "sleep 5 && $PILOT_BIN scan 2>/dev/null && $PILOT_BIN restore 2>/dev/null && $PILOT_BIN resurrect-watchers 2>/dev/null"
 fi
 
 # Periodic scan: when switching windows, update copilot session links.

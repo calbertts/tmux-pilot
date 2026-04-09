@@ -55,6 +55,8 @@ pub struct Watcher {
     pub started_at: String,
     pub last_check_at: Option<String>,
     pub last_output: Option<String>,
+    pub persistent: bool,
+    pub restart_args: Option<String>,
 }
 
 impl Store {
@@ -119,7 +121,9 @@ impl Store {
                 status          TEXT DEFAULT 'running',
                 started_at      TEXT DEFAULT (datetime('now')),
                 last_check_at   TEXT,
-                last_output     TEXT
+                last_output     TEXT,
+                persistent      INTEGER DEFAULT 0,
+                restart_args    TEXT
             );
             ",
         )?;
@@ -127,7 +131,13 @@ impl Store {
         // Incremental migrations for existing databases
         self.conn.execute_batch(
             "ALTER TABLE watchers ADD COLUMN last_output TEXT;"
-        ).ok(); // ignore if column already exists
+        ).ok();
+        self.conn.execute_batch(
+            "ALTER TABLE watchers ADD COLUMN persistent INTEGER DEFAULT 0;"
+        ).ok();
+        self.conn.execute_batch(
+            "ALTER TABLE watchers ADD COLUMN restart_args TEXT;"
+        ).ok();
 
         Ok(())
     }
@@ -408,8 +418,8 @@ impl Store {
 
     pub fn save_watcher(&self, watcher: &Watcher) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO watchers (id, watcher_type, config, pid, status, last_output)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR REPLACE INTO watchers (id, watcher_type, config, pid, status, last_output, persistent, restart_args)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 watcher.id,
                 watcher.watcher_type,
@@ -417,6 +427,8 @@ impl Store {
                 watcher.pid,
                 watcher.status,
                 watcher.last_output,
+                watcher.persistent as i32,
+                watcher.restart_args,
             ],
         )?;
         Ok(())
@@ -424,7 +436,7 @@ impl Store {
 
     pub fn list_watchers(&self) -> Result<Vec<Watcher>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, watcher_type, config, pid, status, started_at, last_check_at, last_output
+            "SELECT id, watcher_type, config, pid, status, started_at, last_check_at, last_output, persistent, restart_args
              FROM watchers ORDER BY started_at DESC",
         )?;
         let rows = stmt
@@ -438,6 +450,8 @@ impl Store {
                     started_at: row.get(5)?,
                     last_check_at: row.get(6)?,
                     last_output: row.get(7)?,
+                    persistent: row.get::<_, i32>(8).unwrap_or(0) != 0,
+                    restart_args: row.get(9)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

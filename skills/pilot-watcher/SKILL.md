@@ -7,27 +7,52 @@ description: Launch background watchers via pilot to monitor pipelines, PRs, Son
 
 Launch background watchers that monitor events and push notifications via `pilot notify`. Notifications appear in the tmux status bar (🔔) and optionally as native OS notifications.
 
+## Watcher Modes
+
+### ⚡ Ephemeral (default)
+One-shot watchers that **auto-delete** when their condition is met. Use for:
+- Downloads completing
+- Pipelines finishing
+- PRs being merged
+- Any "wait for X then tell me" scenario
+
+### 🔄 Persistent (`--persistent`)
+Long-running service monitors that **survive restarts** and keep polling. Use for:
+- API health checks
+- Disk space monitoring
+- Service uptime
+- Any "keep watching forever" scenario
+
+Persistent watchers:
+- **Survive tmux/system restarts** — automatically resurrected on startup
+- Notify only on **state transitions** (OK→FAIL, FAIL→OK) to avoid spam
+- Stay in the watcher list even after stopping — can be **restarted** with `R` in TUI
+- Must be explicitly deleted (`d` in TUI or `pilot watchers --stop`)
+
 ## When to Use
 
 Activate this skill when the user asks to:
-- Watch/monitor a pipeline, build, or CI run
-- Get notified when a PR is merged, abandoned, or has new comments
-- Monitor SonarQube quality gates
-- Set up any recurring background check
+- Watch/monitor a pipeline, build, or CI run → **ephemeral**
+- Get notified when a PR is merged, abandoned, or has new comments → **ephemeral**
+- Monitor SonarQube quality gates → **ephemeral**
+- Set up any recurring background check → **persistent if service, ephemeral if one-time**
+- Track a download or long task → **ephemeral**
+- Monitor a service or health endpoint → **persistent**
 
 ## Naming Convention (REQUIRED)
 
 **Always use `--name`** to give every watcher a human-readable identifier. The name should be short, descriptive, and use kebab-case:
 
-| Context | Name example |
-|---------|-------------|
-| Pipeline for PR #567 | `--name pipeline-pr567` |
-| PR merge watch #890 | `--name pr-merge-890` |
-| PR comments watch | `--name pr-comments-890` |
-| SonarQube for a service | `--name sonar-auth-service` |
-| Custom: file download | `--name gemma4-download` |
-| Custom: API health check | `--name api-health` |
-| Custom: disk space monitor | `--name disk-usage-check` |
+| Context | Name example | Mode |
+|---------|-------------|------|
+| Pipeline for PR #567 | `--name pipeline-pr567` | ephemeral |
+| PR merge watch #890 | `--name pr-merge-890` | ephemeral |
+| PR comments watch | `--name pr-comments-890` | ephemeral |
+| SonarQube for a service | `--name sonar-auth-service` | ephemeral |
+| Custom: file download | `--name gemma4-download` | ephemeral |
+| Custom: API health check | `--name api-health --persistent` | persistent |
+| Custom: disk space monitor | `--name disk-usage --persistent` | persistent |
+| Custom: service uptime | `--name svc-payments --persistent` | persistent |
 
 **Pattern**: `<type-or-purpose>-<target-identifier>`
 
@@ -91,16 +116,23 @@ pilot watch sonarqube --name sonar-auth-svc --project-key <KEY> [--id <PR_ID>] -
 Requires `SONARQUBE_URL` and `SONAR_TOKEN` environment variables.
 
 ### 5. Custom Script Watcher
-Runs any bash script/command repeatedly. When it exits with code 0, the notification fires. First line of stdout becomes the notification title. On non-zero exit, first line of stdout is saved as progress output.
+Runs any bash script/command repeatedly.
+
+**Ephemeral** (default): exit 0 = condition met → notify + auto-delete.
+**Persistent** (`--persistent`): keeps running forever, notifies on state transitions only.
 
 ```bash
-pilot watch custom --name api-health --script "curl -sf https://api.example.com/health" --interval 60
+# Ephemeral: notify when download finishes, then disappear
+pilot watch custom --name gemma4-download --script "./check-download.sh" --interval 60
+
+# Persistent: monitor API health forever, notify on state changes
+pilot watch custom --name api-health --persistent --script "curl -sf https://api.example.com/health" --interval 60
 ```
 
 ## Management Commands
 
 ```bash
-# List all active watchers (shows progress output for custom watchers)
+# List all active watchers (🔄 persistent, ⚡ ephemeral)
 pilot watchers
 
 # Stop a watcher by name
@@ -108,7 +140,20 @@ pilot watchers --stop gemma4-download
 
 # Clean up dead watcher entries
 pilot watchers --cleanup
+
+# Interactive TUI (prefix+W) — navigate, stop, delete, restart
+pilot watchers --tui
 ```
+
+### TUI Keybindings (prefix+W)
+| Key | Action |
+|-----|--------|
+| `j/k` | Navigate |
+| `s` | Stop selected |
+| `d` | Delete from DB |
+| `R` | Restart stopped watcher |
+| `X` | Cleanup dead entries |
+| `q` | Quit |
 
 ## Notification Flow
 
@@ -135,8 +180,10 @@ Example interaction:
 
 ## Important Notes
 
+- **Ephemeral watchers** auto-delete from DB on completion — no cleanup needed
+- **Persistent watchers** survive tmux/system restarts — auto-resurrected on startup via `pilot resurrect-watchers`
+- Persistent watchers notify on **state transitions only** (OK→FAIL, FAIL→OK) to prevent notification spam
 - Watchers run as detached background processes — they survive even if the copilot session exits
-- Each watcher self-terminates when its condition resolves
-- `AZURE_DEVOPS_PAT` must be available in the environment (inherited from tmux server via pilot.tmux)
+- `AZURE_DEVOPS_PAT` must be available in the environment for AzDo watchers
 - Default poll interval is 120 seconds — increase for less urgent checks
 - Use `--foreground` flag for debugging a watcher
