@@ -64,6 +64,7 @@ fn build_display_rows(watchers: &[Watcher]) -> Vec<DisplayRow> {
             "🔄 Persistent ({})",
             persistent.len()
         )));
+        rows.push(DisplayRow::Header(String::new())); // breathing room
         for i in persistent {
             rows.push(DisplayRow::Entry(i));
         }
@@ -71,13 +72,13 @@ fn build_display_rows(watchers: &[Watcher]) -> Vec<DisplayRow> {
 
     if !ephemeral.is_empty() {
         if !rows.is_empty() {
-            // spacer between groups
-            rows.push(DisplayRow::Header(String::new()));
+            rows.push(DisplayRow::Header(String::new())); // gap between groups
         }
         rows.push(DisplayRow::Header(format!(
             "⚡ Ephemeral ({})",
             ephemeral.len()
         )));
+        rows.push(DisplayRow::Header(String::new())); // breathing room
         for i in ephemeral {
             rows.push(DisplayRow::Entry(i));
         }
@@ -329,15 +330,12 @@ fn render(
             .map(|row| match row {
                 DisplayRow::Header(title) => {
                     if title.is_empty() {
-                        // Spacer row
                         ListItem::new(Line::from(""))
                     } else {
                         ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!("  {}", title),
-                                Style::default()
-                                    .fg(Gruvbox::FG_BRIGHT)
-                                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                                Style::default().fg(Gruvbox::DARK_GRAY),
                             ),
                         ]))
                     }
