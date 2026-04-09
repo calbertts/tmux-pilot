@@ -269,7 +269,7 @@ fn type_icon(watcher_type: &str) -> (&str, ratatui::style::Color) {
         "pr-merge" => ("⎇", Gruvbox::PURPLE),
         "pr-comments" => ("💬", Gruvbox::YELLOW),
         "sonarqube" => ("🔍", Gruvbox::AQUA),
-        "custom" => ("⚡", Gruvbox::ORANGE),
+        "custom" => ("📜", Gruvbox::ORANGE),
         _ => ("?", Gruvbox::GRAY),
     }
 }
@@ -335,7 +335,7 @@ fn render(
                         ListItem::new(Line::from(vec![
                             Span::styled(
                                 format!("  {}", title),
-                                Style::default().fg(Gruvbox::DARK_GRAY),
+                                Style::default().fg(Gruvbox::GRAY),
                             ),
                         ]))
                     }
