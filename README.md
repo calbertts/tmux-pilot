@@ -16,7 +16,7 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 - **Task selector** (`prefix+T`) — grouped by type: Bugs 🐛, User Stories 📖, Tasks ✅, Free 💻
 - **Dashboard** (`prefix+D`) — overview of all sessions with window previews
 - **Notification center** (`prefix+N`) — 🔔 in status bar, level icons, source tags
-- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube, custom scripts with live progress
+- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube, custom scripts with live progress. Persistent 🔄 and ephemeral ⚡ modes with grouped display
 - **Detail view** — press `o` on any work item to read description + acceptance criteria
 - **Copilot integration** — auto-launch copilot with work item context injection
 - **AzDo integration** — fetch features/stories/bugs via REST API (curl-based, Zscaler-compatible)
@@ -24,6 +24,7 @@ Organize tmux **sessions** around AzDo **features** and **windows** around **use
 - **Native notifications** — macOS, Windows, Linux desktop notifications with sound
 - **Notification sound** — configurable ping sound on every notification (on by default)
 - **Session persistence** — copilot sessions survive tmux restarts via `pilot scan` + `pilot restore`
+- **Watcher persistence** — persistent watchers auto-resurrect after tmux/system restarts
 - **SQLite persistence** — session mappings, notifications, watchers, AzDo cache
 
 ## Installation
@@ -86,11 +87,17 @@ pilot help-all     # Full reference
 
 ```bash
 pilot notify "Build failed" -l error -s pipeline
+
+# Ephemeral watchers (default) — auto-delete on completion
 pilot watch pipeline --name pipe-pr123 --id 12345
 pilot watch custom --name my-download --script "check.sh" --interval 30
-pilot watchers                  # Shows progress for custom watchers
+
+# Persistent watchers — survive restarts, notify on state transitions
+pilot watch custom --name api-health --persistent --script "curl -sf https://api/health" --interval 60
+
+pilot watchers                    # List all (🔄 persistent, ⚡ ephemeral)
 pilot watchers --stop my-download
-pilot watchers --tui
+pilot watchers --tui              # Interactive manager (prefix+W)
 ```
 
 ### tmux Keybindings
@@ -184,12 +191,12 @@ pilot (~4MB binary)
 │   ├── Task Selector — grouped by type, detail view
 │   ├── Dashboard — session overview
 │   ├── Notification Center — level icons, source tags
-│   └── Watcher Manager — status, stop, cleanup
+│   └── Watcher Manager — grouped (persistent/ephemeral), stop, restart, delete
 ├── tmux Controller — session/window CRUD
 ├── Copilot Launcher — context injection from work items
 ├── AzDo Client — REST via curl (Zscaler-compatible)
 ├── Notification System — SQLite → status bar → native OS
-├── Watcher Framework — pipeline, PR, SonarQube, custom monitors
+├── Watcher Framework — pipeline, PR, SonarQube, custom (persistent/ephemeral)
 ├── SQLite Store — sessions, notifications, watchers, AzDo cache
 ├── Bundled Skills — auto-installed to ~/.copilot/skills/
 └── Config — TOML + env var enrichment + setup wizard
