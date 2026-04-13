@@ -65,6 +65,8 @@ pub struct App<'a> {
     current_session: Option<String>,
     /// Parent work item for the current task view (used when session doesn't exist yet)
     current_parent_work_item: Option<WorkItem>,
+    /// Navigation stack for hierarchical drill-down (Ctrl+O pops)
+    parent_stack: Vec<Option<WorkItem>>,
 
     // Dashboard state
     dashboard_sessions: Vec<DashboardEntry>,
@@ -188,6 +190,7 @@ impl<'a> App<'a> {
             task_visual_map: vec![],
             current_session: None,
             current_parent_work_item: None,
+            parent_stack: Vec::new(),
             dashboard_sessions: vec![],
             dashboard_list_state: ListState::default(),
             text_input: String::new(),
@@ -452,14 +455,18 @@ impl<'a> App<'a> {
             }
             View::TaskSelector => {
                 let session_name = self.current_session.clone().unwrap_or_default();
-                // Try SQLite mapping first, then fall back to parent work item from feature selector
-                let parent_id = self
-                    .store
-                    .get_session_mapping(&session_name)
-                    .ok()
-                    .flatten()
-                    .and_then(|m| m.work_item_id)
-                    .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id));
+                // When drilling into children (parent_stack not empty), use the current parent work item.
+                // Otherwise fall back to session mapping for the top-level feature.
+                let parent_id = if !self.parent_stack.is_empty() {
+                    self.current_parent_work_item.as_ref().and_then(|wi| wi.id)
+                } else {
+                    self.store
+                        .get_session_mapping(&session_name)
+                        .ok()
+                        .flatten()
+                        .and_then(|m| m.work_item_id)
+                        .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id))
+                };
 
                 if let Some(pid) = parent_id {
                     // Check cache first
@@ -564,21 +571,17 @@ impl<'a> App<'a> {
             AzdoFetchResult::Tasks(Ok(ref azdo_tasks)) => {
                 // Cache for next time
                 if let Some(ref azdo_cfg) = self.cfg.azdo {
-                    if let Some(ref session) = self.current_session {
-                        if let Some(pid) = self
-                            .store
-                            .get_session_mapping(session)
-                            .ok()
-                            .flatten()
-                            .and_then(|m| m.work_item_id)
-                        {
-                            let cache_key = format!(
-                                "tasks:{}:{}:{}",
-                                azdo_cfg.organization, azdo_cfg.project, pid
-                            );
-                            if let Ok(json) = serde_json::to_string(azdo_tasks) {
-                                self.store.set_cached(&cache_key, &json).ok();
-                            }
+                    let parent_id = self.current_session.as_ref()
+                        .and_then(|session| self.store.get_session_mapping(session).ok().flatten())
+                        .and_then(|m| m.work_item_id)
+                        .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id));
+                    if let Some(pid) = parent_id {
+                        let cache_key = format!(
+                            "tasks:{}:{}:{}",
+                            azdo_cfg.organization, azdo_cfg.project, pid
+                        );
+                        if let Ok(json) = serde_json::to_string(azdo_tasks) {
+                            self.store.set_cached(&cache_key, &json).ok();
                         }
                     }
                 }
@@ -938,13 +941,22 @@ impl<'a> App<'a> {
             self.dispatch_char_to_filter('g');
         }
 
-        // Ctrl+O: toggle between Feature ↔ Task selector from any view
+        // Ctrl+O: go back in hierarchy
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('o') {
-            return self.switch_to_view(match self.view {
-                View::FeatureSelector => View::TaskSelector,
-                View::TaskSelector | View::TaskDetail => View::FeatureSelector,
-                View::Dashboard => View::FeatureSelector,
-            });
+            match self.view {
+                View::TaskSelector | View::TaskDetail => {
+                    if let Some(prev_parent) = self.parent_stack.pop() {
+                        // Go up one level in the hierarchy
+                        self.current_parent_work_item = prev_parent;
+                        let session = self.current_session.clone();
+                        return self.switch_to_view_with_session(View::TaskSelector, session);
+                    }
+                    // Stack empty: go back to feature selector
+                    return self.switch_to_view(View::FeatureSelector);
+                }
+                View::FeatureSelector => return self.switch_to_view(View::TaskSelector),
+                View::Dashboard => return self.switch_to_view(View::FeatureSelector),
+            }
         }
 
         // G (shift+g): jump to last item
@@ -1187,6 +1199,7 @@ impl<'a> App<'a> {
                     .map(|idx| self.features[idx].clone());
                 let session = selected_feature.as_ref().map(|f| f.name.clone());
                 let parent_wi = selected_feature.and_then(|f| f.work_item);
+                self.parent_stack.clear();
                 self.current_parent_work_item = parent_wi;
                 self.switch_to_view_with_session(View::TaskSelector, session)?;
             }
@@ -1256,6 +1269,8 @@ impl<'a> App<'a> {
                     if let Some(Some(idx)) = self.task_visual_map.get(selected).copied() {
                         let task = &self.tasks[idx];
                         if let Some(ref wi) = task.work_item {
+                            // Push current parent to stack for back navigation
+                            self.parent_stack.push(self.current_parent_work_item.clone());
                             let session = self.current_session.clone();
                             self.current_parent_work_item = Some(wi.clone());
                             self.switch_to_view_with_session(View::TaskSelector, session)?;
@@ -1264,10 +1279,22 @@ impl<'a> App<'a> {
                 }
             }
             KeyCode::Backspace => {
-                self.task_filter.pop();
-                self.update_task_filter();
-                self.task_list_state
-                    .select(self.first_selectable_task_row());
+                if self.task_filter.is_empty() && !self.parent_stack.is_empty() {
+                    // Navigate back up the hierarchy
+                    if let Some(prev_parent) = self.parent_stack.pop() {
+                        self.current_parent_work_item = prev_parent;
+                        let session = self.current_session.clone();
+                        self.switch_to_view_with_session(View::TaskSelector, session)?;
+                    }
+                } else if self.task_filter.is_empty() {
+                    // At top level, go back to features
+                    self.switch_to_view(View::FeatureSelector)?;
+                } else {
+                    self.task_filter.pop();
+                    self.update_task_filter();
+                    self.task_list_state
+                        .select(self.first_selectable_task_row());
+                }
             }
             KeyCode::Char(ch) if !ch.is_ascii_control() => {
                 self.task_filter.push(ch);
@@ -1855,21 +1882,33 @@ impl<'a> App<'a> {
             ])
             .split(area);
 
-        // Session title line
-        let title = self
+        // Session title with hierarchy breadcrumb
+        let session_title = self
             .current_session
             .clone()
             .unwrap_or_else(|| "Unknown".to_string());
+        let mut title_spans = vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                &session_title,
+                Style::default()
+                    .fg(Gruvbox::ORANGE)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ];
+        // Show current parent breadcrumb when drilling into children
+        if let Some(ref parent_wi) = self.current_parent_work_item {
+            let depth = self.parent_stack.len();
+            if depth > 0 {
+                // We're viewing children of a child (not the top-level feature)
+                let label = parent_wi.id
+                    .map(|id| format!("  ▸ #{} {}", id, parent_wi.title))
+                    .unwrap_or_else(|| format!("  ▸ {}", parent_wi.title));
+                title_spans.push(Span::styled(label, Style::default().fg(Gruvbox::AQUA)));
+            }
+        }
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    &title,
-                    Style::default()
-                        .fg(Gruvbox::ORANGE)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])),
+            Paragraph::new(Line::from(title_spans)),
             chunks[0],
         );
 
@@ -1989,7 +2028,7 @@ impl<'a> App<'a> {
                 chunks[4],
             );
         } else {
-            let help = vec![
+            let mut help = vec![
                 Span::styled("  ↑↓", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" move  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
@@ -1998,13 +2037,19 @@ impl<'a> App<'a> {
                 Span::styled(" children  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("d", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
+            ];
+            if !self.parent_stack.is_empty() {
+                help.push(Span::styled("⌫", Style::default().fg(Gruvbox::FG)));
+                help.push(Span::styled(" back  ", Style::default().fg(Gruvbox::GRAY)));
+            }
+            help.extend([
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +copilot  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^t", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +term  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
-            ];
+            ]);
             render_footer(f, chunks[4], help, state_legend(true));
         }
     }
