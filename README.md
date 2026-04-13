@@ -116,7 +116,8 @@ pilot watchers --tui              # Interactive manager (prefix+W)
 |-----|--------|
 | `j/k` `↑/↓` | Navigate |
 | `Enter` | Select / open / attach |
-| `o` | View detail / tasks |
+| `o` | Drill into children (features → tasks → sub-items) |
+| `d` | View detail (description, acceptance criteria) |
 | `Ctrl+O` | Go back |
 | `Ctrl+N` | New session / copilot window |
 | `gg` / `G` | Jump to top / bottom |

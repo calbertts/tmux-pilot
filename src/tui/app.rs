@@ -1181,7 +1181,7 @@ impl<'a> App<'a> {
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::FeatureSelector),
             KeyCode::Enter => self.select_feature()?,
             KeyCode::Char('o') => {
-                // Get the selected feature's session name and work item
+                // Navigate into children: open task selector for selected feature
                 let selected_feature = self.feature_list_state.selected()
                     .and_then(|sel| self.visual_map.get(sel).copied().flatten())
                     .map(|idx| self.features[idx].clone());
@@ -1189,6 +1189,19 @@ impl<'a> App<'a> {
                 let parent_wi = selected_feature.and_then(|f| f.work_item);
                 self.current_parent_work_item = parent_wi;
                 self.switch_to_view_with_session(View::TaskSelector, session)?;
+            }
+            KeyCode::Char('d') => {
+                // Show detail for selected feature
+                let selected_feature = self.feature_list_state.selected()
+                    .and_then(|sel| self.visual_map.get(sel).copied().flatten())
+                    .map(|idx| self.features[idx].clone());
+                if let Some(ref feature) = selected_feature {
+                    if let Some(ref wi) = feature.work_item {
+                        self.detail_work_item = Some(wi.clone());
+                        self.detail_scroll = 0;
+                        self.view = View::TaskDetail;
+                    }
+                }
             }
             KeyCode::Backspace => {
                 self.feature_filter.pop();
@@ -1225,14 +1238,27 @@ impl<'a> App<'a> {
             KeyCode::Up | KeyCode::Char('k') => self.move_selection_up(&View::TaskSelector),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection_down(&View::TaskSelector),
             KeyCode::Enter => self.select_task()?,
-            KeyCode::Char('o') => {
-                // Open detail view for selected task
+            KeyCode::Char('d') => {
+                // Show detail view for selected task
                 if let Some(selected) = self.task_list_state.selected() {
                     if let Some(Some(idx)) = self.task_visual_map.get(selected).copied() {
                         if let Some(ref wi) = self.tasks[idx].work_item {
                             self.detail_work_item = Some(wi.clone());
                             self.detail_scroll = 0;
                             self.view = View::TaskDetail;
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('o') => {
+                // Navigate into children of selected task
+                if let Some(selected) = self.task_list_state.selected() {
+                    if let Some(Some(idx)) = self.task_visual_map.get(selected).copied() {
+                        let task = &self.tasks[idx];
+                        if let Some(ref wi) = task.work_item {
+                            let session = self.current_session.clone();
+                            self.current_parent_work_item = Some(wi.clone());
+                            self.switch_to_view_with_session(View::TaskSelector, session)?;
                         }
                     }
                 }
@@ -1276,7 +1302,7 @@ impl<'a> App<'a> {
             KeyCode::Down | KeyCode::Char('j') => {
                 self.detail_scroll = self.detail_scroll.saturating_add(1);
             }
-            KeyCode::Char('o') | KeyCode::Backspace => {
+            KeyCode::Backspace => {
                 // Go back to task selector
                 self.view = View::TaskSelector;
             }
@@ -1806,6 +1832,8 @@ impl<'a> App<'a> {
                 Span::styled(" open  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("o", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" tasks  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled("d", Style::default().fg(Gruvbox::FG)),
+                Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" new  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
@@ -1967,6 +1995,8 @@ impl<'a> App<'a> {
                 Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" go  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("o", Style::default().fg(Gruvbox::FG)),
+                Span::styled(" children  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled("d", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +copilot  ", Style::default().fg(Gruvbox::GRAY)),
@@ -2098,7 +2128,7 @@ impl<'a> App<'a> {
             Span::styled(" scroll  ", Style::default().fg(Gruvbox::GRAY)),
             Span::styled("⏎", Style::default().fg(Gruvbox::FG)),
             Span::styled(" go to session  ", Style::default().fg(Gruvbox::GRAY)),
-            Span::styled("o", Style::default().fg(Gruvbox::FG)),
+            Span::styled("⌫", Style::default().fg(Gruvbox::FG)),
             Span::styled(" back  ", Style::default().fg(Gruvbox::GRAY)),
             Span::styled("q", Style::default().fg(Gruvbox::FG)),
             Span::styled(" quit", Style::default().fg(Gruvbox::GRAY)),
