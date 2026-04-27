@@ -8,6 +8,22 @@ use crate::store::Store;
 
 const CACHE_TTL_MINUTES: i64 = 15;
 
+/// Percent-encode a URL path segment (spaces → %20, etc.)
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                out.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    out
+}
+
 /// Fetch features (parent work items) from AzDo, with caching
 pub fn fetch_features(azdo: &AzdoConfig, store: &Store) -> Result<Vec<WorkItem>> {
     let cache_key = format!("features:{}:{}", azdo.organization, azdo.project);
@@ -100,7 +116,7 @@ pub fn fetch_projects(org: &str) -> Result<Vec<String>> {
 pub fn fetch_projects_with_pat(org: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/_apis/projects?api-version=7.1&$top=100",
-        org
+        url_encode(org)
     );
     let body = curl_get(&url, pat)?;
 
@@ -125,7 +141,7 @@ pub fn fetch_teams(org: &str, project: &str) -> Result<Vec<String>> {
 pub fn fetch_teams_with_pat(org: &str, project: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/{}/_apis/teams?api-version=7.1&$top=100",
-        org, project
+        url_encode(org), url_encode(project)
     );
     let body = curl_get(&url, pat)?;
 
@@ -150,7 +166,7 @@ pub fn fetch_area_paths(org: &str, project: &str) -> Result<Vec<String>> {
 pub fn fetch_area_paths_with_pat(org: &str, project: &str, pat: &str) -> Result<Vec<String>> {
     let url = format!(
         "https://dev.azure.com/{}/{}/_apis/wit/classificationnodes/Areas?$depth=3&api-version=7.1",
-        org, project
+        url_encode(org), url_encode(project)
     );
     let body = curl_get(&url, pat)?;
 
@@ -290,7 +306,7 @@ fn query_work_items(azdo: &AzdoConfig, pat: &str, wit_type: &str) -> Result<Vec<
 
     let base_url = format!(
         "https://dev.azure.com/{}/{}",
-        azdo.organization, azdo.project
+        url_encode(&azdo.organization), url_encode(&azdo.project)
     );
 
     let wiql_body = serde_json::to_string(&serde_json::json!({ "query": wiql }))?;
@@ -315,7 +331,7 @@ fn query_work_items(azdo: &AzdoConfig, pat: &str, wit_type: &str) -> Result<Vec<
 fn query_child_items(azdo: &AzdoConfig, pat: &str, parent_id: u64) -> Result<Vec<WorkItem>> {
     let base_url = format!(
         "https://dev.azure.com/{}/{}",
-        azdo.organization, azdo.project
+        url_encode(&azdo.organization), url_encode(&azdo.project)
     );
 
     let wiql = format!(
