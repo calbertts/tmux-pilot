@@ -476,8 +476,10 @@ impl<'a> App<'a> {
                     );
                     if let Some(cached) = self.store.get_cached(&cache_key, 15).ok().flatten() {
                         if let Ok(items) = serde_json::from_str::<Vec<WorkItem>>(&cached) {
-                            self.merge_azdo_result(AzdoFetchResult::Tasks(Ok(items)));
-                            return;
+                            if !items.is_empty() {
+                                self.merge_azdo_result(AzdoFetchResult::Tasks(Ok(items)));
+                                return;
+                            }
                         }
                     }
 
@@ -569,19 +571,25 @@ impl<'a> App<'a> {
                 self.status_msg = Some(format!("⚠ AzDo: {}", e));
             }
             AzdoFetchResult::Tasks(Ok(ref azdo_tasks)) => {
-                // Cache for next time
-                if let Some(ref azdo_cfg) = self.cfg.azdo {
-                    let parent_id = self.current_session.as_ref()
-                        .and_then(|session| self.store.get_session_mapping(session).ok().flatten())
-                        .and_then(|m| m.work_item_id)
-                        .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id));
-                    if let Some(pid) = parent_id {
-                        let cache_key = format!(
-                            "tasks:{}:{}:{}",
-                            azdo_cfg.organization, azdo_cfg.project, pid
-                        );
-                        if let Ok(json) = serde_json::to_string(azdo_tasks) {
-                            self.store.set_cached(&cache_key, &json).ok();
+                // Cache for next time (skip empty results to avoid poisoning cache)
+                if !azdo_tasks.is_empty() {
+                    if let Some(ref azdo_cfg) = self.cfg.azdo {
+                        let parent_id = if !self.parent_stack.is_empty() {
+                            self.current_parent_work_item.as_ref().and_then(|wi| wi.id)
+                        } else {
+                            self.current_session.as_ref()
+                                .and_then(|session| self.store.get_session_mapping(session).ok().flatten())
+                                .and_then(|m| m.work_item_id)
+                                .or_else(|| self.current_parent_work_item.as_ref().and_then(|wi| wi.id))
+                        };
+                        if let Some(pid) = parent_id {
+                            let cache_key = format!(
+                                "tasks:{}:{}:{}",
+                                azdo_cfg.organization, azdo_cfg.project, pid
+                            );
+                            if let Ok(json) = serde_json::to_string(azdo_tasks) {
+                                self.store.set_cached(&cache_key, &json).ok();
+                            }
                         }
                     }
                 }
@@ -720,6 +728,17 @@ impl<'a> App<'a> {
     }
 
     fn load_local_tasks(&mut self) -> Result<()> {
+        // When drilling into sub-levels (parent_stack not empty), start with empty list.
+        // Only AzDo fetch will populate children — there are no tmux windows at sub-levels.
+        if !self.parent_stack.is_empty() {
+            self.tasks = Vec::new();
+            self.sort_tasks();
+            self.update_task_filter();
+            self.task_list_state.select(None);
+            return Ok(());
+        }
+
+        // Top-level: populate from tmux windows
         // Use pre-set session (from feature selector 'o') or fall back to tmux current
         let session_name = self
             .current_session
