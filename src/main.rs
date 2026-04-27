@@ -577,16 +577,16 @@ fn show_help_all() -> Result<()> {
 
     j/k  ↑/↓       Navigate
     Enter           Select / open / attach
-    o               Open detail (task view) / view tasks (feature view)
+    o               Drill into children (feature → tasks → sub-items)
+    d               View work item detail (description, acceptance criteria)
+    Backspace       Go back in hierarchy (or clear filter)
     Ctrl+O          Go back to previous view
     Ctrl+N          New session (feature) / new copilot window (task)
     Ctrl+T          New terminal window (task view)
-    d               Kill session (dashboard)
     gg              Jump to top
     G (Shift+G)     Jump to bottom
     q / Esc         Quit
     Type            Fuzzy filter
-    Backspace       Clear filter
     Mouse scroll    Navigate
 
   ━━━ State Badges ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

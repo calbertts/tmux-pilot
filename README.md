@@ -2,133 +2,141 @@
 
 A tmux plugin for managing AI coding sessions with Azure DevOps integration. Built in Rust with [ratatui](https://github.com/ratatui-org/ratatui).
 
-Organize tmux **sessions** around AzDo **features** and **windows** around **user stories/bugs/tasks**. Auto-launch `copilot` CLI with work item context injection.
-
-## Demo
+Organize tmux **sessions** around AzDo **features** and **windows** around **user stories/bugs/tasks**. Auto-launch [GitHub Copilot CLI](https://githubnext.com/projects/copilot-cli) with work item context injection.
 
 <p align="center"><img src="docs/screenshots/demo.gif?v=3" width="800" /></p>
 
 > Feature selector → Task selector → Dashboard → Help reference. Run `pilot --demo` to try it yourself.
 
-## Features
+## Getting Started
 
-- **Feature selector** (`prefix+F`) — grouped view: Active, AzDo-only, Free sessions
-- **Task selector** (`prefix+T`) — grouped by type: Bugs 🐛, User Stories 📖, Tasks ✅, Free 💻
-- **Dashboard** (`prefix+D`) — overview of all sessions with window previews
-- **Notification center** (`prefix+N`) — 🔔 in status bar, level icons, source tags
-- **Watcher manager** (`prefix+W`) — background monitors for pipelines, PRs, SonarQube, custom scripts with live progress. Persistent 🔄 and ephemeral ⚡ modes with grouped display
-- **Detail view** — press `o` on any work item to read description + acceptance criteria
-- **Copilot integration** — auto-launch copilot with work item context injection
-- **AzDo integration** — fetch features/stories/bugs via REST API (curl-based, Zscaler-compatible)
-- **Fuzzy search** — type to filter in any view
-- **Native notifications** — macOS, Windows, Linux desktop notifications with sound
-- **Notification sound** — configurable ping sound on every notification (on by default)
-- **Session persistence** — copilot sessions survive tmux restarts via `pilot scan` + `pilot restore`
-- **Watcher persistence** — persistent watchers auto-resurrect after tmux/system restarts
-- **SQLite persistence** — session mappings, notifications, watchers, AzDo cache
+### Prerequisites
 
-## Installation
+- **tmux 3.3+** (needs `display-popup` support)
+- **macOS** (arm64/x86_64) or **Linux** (x86_64/aarch64)
+- **GitHub Copilot CLI** installed and authenticated (`copilot` in PATH)
+- An **Azure DevOps** organization with Features/User Stories/Bugs
 
-### Option A: TPM (recommended)
+### 1. Install
 
-Add to `~/.tmux.conf`:
+**With [TPM](https://github.com/tmux-plugins/tpm)** (recommended):
 
 ```tmux
+# Add to ~/.tmux.conf
 set -g @plugin 'calbertts/tmux-pilot'
 ```
 
-Run `prefix + I` to install. The binary is auto-downloaded from GitHub Releases.
+Then `prefix + I` to install. The binary is auto-downloaded from GitHub Releases.
 
-### Option B: Manual
+**Manual:**
 
 ```bash
 git clone https://github.com/calbertts/tmux-pilot.git ~/.tmux/plugins/tmux-pilot
+echo 'run-shell ~/.tmux/plugins/tmux-pilot/pilot.tmux' >> ~/.tmux.conf
+tmux source ~/.tmux.conf
 ```
 
-Add to `~/.tmux.conf`:
+> To build from source: `cd ~/.tmux/plugins/tmux-pilot && cargo build --release`
 
-```tmux
-run-shell ~/.tmux/plugins/tmux-pilot/pilot.tmux
-```
-
-Reload: `tmux source ~/.tmux.conf`
-
-The binary auto-downloads on first load. To build from source instead:
+### 2. Configure AzDo connection
 
 ```bash
-cd ~/.tmux/plugins/tmux-pilot
-cargo build --release
+# Set your PAT (add to your shell profile so it persists across tmux restarts)
+export AZURE_DEVOPS_PAT="your-pat-here"
+
+# Run the setup wizard
+pilot setup
 ```
 
-### Setup
+The wizard walks you through: **organization → project → team → area path → iteration filters**.
 
-```bash
-pilot setup   # Interactive wizard: PAT → org → project → team → area path
+Config is saved to `~/.config/pilot/config.toml` (Linux) or `~/Library/Application Support/pilot/config.toml` (macOS).
+
+### 3. Open pilot
+
+```
+prefix + F
 ```
 
-## Usage
+That's it. You'll see your AzDo features grouped by state. Navigate with `j/k`, press `Enter` to create a tmux session for a feature, and `o` to drill into its children.
 
-Run `pilot help-all` for the complete reference, or see below:
+### First session walkthrough
 
-### CLI
+1. `prefix + F` — opens the feature selector
+2. Navigate to a feature → `Enter` — creates a tmux session named after the feature
+3. `prefix + T` — shows the tasks/stories/bugs under that feature
+4. Select a task → `Enter` — creates a tmux window and auto-launches copilot with the work item context
+5. Start coding — copilot already knows what you're working on
+
+## Features
+
+| Feature | Key | Description |
+|---------|-----|-------------|
+| **Feature selector** | `prefix+F` | Sessions grouped by AzDo state: Active, New, AzDo-only, Free |
+| **Task selector** | `prefix+T` | Windows grouped by type: 🐛 Bugs, 📖 User Stories, ✅ Tasks, 💻 Free |
+| **Dashboard** | `prefix+D` | Overview of all sessions with window previews |
+| **Notification center** | `prefix+N` | 🔔 status bar badge, level icons, source tags |
+| **Watcher manager** | `prefix+W` | Background monitors grouped: 🔄 Persistent / ⚡ Ephemeral |
+| **Detail view** | `d` | Read description + acceptance criteria inline |
+| **Hierarchy navigation** | `o` / `⌫` | Drill into children (Feature → Story → Bug/Task) and back |
+| **Copilot auto-launch** | — | Launches copilot with work item context (title, description, acceptance criteria) |
+| **Fuzzy filter** | type | Filter any list by typing |
+| **Native notifications** | — | macOS / Linux desktop notifications with sound |
+| **Session persistence** | — | Copilot sessions survive tmux restarts (`scan` + `restore`) |
+| **Watcher persistence** | — | Persistent watchers auto-resurrect after restarts |
+
+## TUI Navigation
+
+| Key | Action |
+|-----|--------|
+| `j/k` or `↑/↓` | Navigate |
+| `Enter` | Select / open / attach |
+| `o` | Drill into children (feature → tasks → sub-items) |
+| `d` | View work item detail |
+| `Backspace` / `Ctrl+O` | Go back (hierarchy or filter) |
+| `Ctrl+N` | New session (features) / new copilot window (tasks) |
+| `Ctrl+T` | New terminal window (tasks) |
+| `gg` / `G` | Jump to top / bottom |
+| type | Fuzzy filter |
+| `q` / `Esc` | Quit |
+
+## CLI Reference
 
 ```bash
+# Views
 pilot              # Feature selector (default)
 pilot task         # Task selector
 pilot dash         # Dashboard
 pilot ls           # List sessions
-pilot free "Name"  # Free session
-pilot setup        # Setup wizard
-pilot config       # Show config
-pilot help-all     # Full reference
-```
+pilot free "Name"  # Create a free session (no AzDo link)
 
-### Notifications & Watchers
-
-```bash
+# Notifications
 pilot notify "Build failed" -l error -s pipeline
+pilot notifications           # Open notification center
+pilot notifications --count   # Unread count (used in tmux status bar)
 
-# Ephemeral watchers (default) — auto-delete on completion
-pilot watch pipeline --name pipe-pr123 --id 12345
-pilot watch custom --name my-download --script "check.sh" --interval 30
+# Watchers — ephemeral (default) auto-delete on completion
+pilot watch pipeline --name pipe-123 --id 12345
+pilot watch pr-merge --name pr-678 --id 678
+pilot watch custom --name my-check --script "check.sh" --interval 30
 
-# Persistent watchers — survive restarts, notify on state transitions
+# Watchers — persistent: survive restarts, notify on state transitions only
 pilot watch custom --name api-health --persistent --script "curl -sf https://api/health" --interval 60
 
+# Watcher management
 pilot watchers                    # List all (🔄 persistent, ⚡ ephemeral)
-pilot watchers --stop my-download
-pilot watchers --tui              # Interactive manager (prefix+W)
+pilot watchers --tui              # Interactive manager
+pilot watchers --stop my-check    # Stop by name
+
+# Config
+pilot setup        # Setup wizard
+pilot config       # Show current config
+pilot help-all     # Full CLI reference
 ```
-
-### tmux Keybindings
-
-| Key | Action |
-|-----|--------|
-| `prefix + F` | Feature selector |
-| `prefix + T` | Task selector |
-| `prefix + D` | Session dashboard |
-| `prefix + N` | Notification center |
-| `prefix + W` | Watcher manager |
-
-### TUI Navigation
-
-| Key | Action |
-|-----|--------|
-| `j/k` `↑/↓` | Navigate |
-| `Enter` | Select / open / attach |
-| `o` | Drill into children (features → tasks → sub-items) |
-| `d` | View detail (description, acceptance criteria) |
-| `Ctrl+O` | Go back |
-| `Ctrl+N` | New session / copilot window |
-| `gg` / `G` | Jump to top / bottom |
-| Type | Fuzzy filter |
-| `q` / `Esc` | Quit |
 
 ## Configuration
 
-Config file: `~/.config/pilot/config.toml` (Linux) or `~/Library/Application Support/pilot/config.toml` (macOS).
-
-Run `pilot setup` for interactive configuration, or create manually:
+Minimal config (created by `pilot setup`):
 
 ```toml
 [copilot]
@@ -152,26 +160,40 @@ sound = true
 ttl_days = 7
 ```
 
+See [`config.example.toml`](config.example.toml) for all options including prompt templates, keybinding overrides, and extra copilot flags.
+
 ### Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `AZURE_DEVOPS_PAT` | AzDo personal access token (required) |
+| `AZURE_DEVOPS_PAT` | AzDo personal access token **(required)** |
 | `PILOT_AZDO_ORG` | Override organization from config |
 | `PILOT_AZDO_PROJECT` | Override project from config |
 | `PILOT_AZDO_TEAM` | Override team from config |
 | `PILOT_AZDO_AREA` | Override area path filter |
 | `PILOT_CODE_PATH` | Auto-add `--add-dir` to copilot |
 
+> **Tip:** Export `AZURE_DEVOPS_PAT` in your shell profile (`~/.zshrc`, `~/.bashrc`) so it's available in every tmux session.
+
+### Keybinding Customization
+
+Override default keys in `~/.tmux.conf`:
+
+```tmux
+set -g @pilot-feature-key "F"
+set -g @pilot-task-key "T"
+set -g @pilot-dash-key "D"
+set -g @pilot-notify-key "N"
+set -g @pilot-watcher-key "W"
+```
+
 ## Bundled Copilot Skills
 
-tmux-pilot ships with copilot-cli skills that are **automatically installed** when the plugin loads.
-
-On first load (or after updates), `pilot.tmux` symlinks the bundled skills into `~/.copilot/skills/` so copilot-cli discovers them without manual setup.
+tmux-pilot ships copilot-cli skills that are **automatically installed** when the plugin loads (symlinked to `~/.copilot/skills/`).
 
 ### pilot-watcher
 
-Enables copilot to launch and manage watchers (pipeline monitors, PR trackers, SonarQube checks) directly from the conversation:
+Enables copilot to launch and manage watchers directly from conversation:
 
 ```
 > Start a watcher for pipeline build 12345
@@ -179,28 +201,26 @@ Enables copilot to launch and manage watchers (pipeline monitors, PR trackers, S
 > Stop the PR merge watcher
 ```
 
-The skill is available in every copilot session automatically — no configuration needed.
-
-> **Note:** If you already have a `~/.copilot/skills/pilot-watcher` from a different source, the installer won't overwrite it. Remove it manually to use the bundled version.
+No configuration needed — available in every copilot session automatically.
 
 ## Architecture
 
 ```
-pilot (~4MB binary)
+pilot (~4MB Rust binary)
 ├── TUI (ratatui + crossterm)
-│   ├── Feature Selector — grouped, fuzzy, state badges
-│   ├── Task Selector — grouped by type, detail view
-│   ├── Dashboard — session overview
-│   ├── Notification Center — level icons, source tags
-│   └── Watcher Manager — grouped (persistent/ephemeral), stop, restart, delete
-├── tmux Controller — session/window CRUD
+│   ├── Feature Selector — sessions grouped by AzDo state, fuzzy filter
+│   ├── Task Selector — windows grouped by type, hierarchy navigation
+│   ├── Dashboard — session overview with window previews
+│   ├── Notification Center — level icons, source tags, read/unread
+│   └── Watcher Manager — persistent/ephemeral groups, stop/restart/delete
+├── tmux Controller — session/window CRUD via tmux CLI
 ├── Copilot Launcher — context injection from work items
-├── AzDo Client — REST via curl (Zscaler-compatible)
-├── Notification System — SQLite → status bar → native OS
-├── Watcher Framework — pipeline, PR, SonarQube, custom (persistent/ephemeral)
+├── AzDo Client — REST API via curl subprocess (Zscaler-compatible)
+├── Notification System — SQLite → tmux status bar → native OS
+├── Watcher Framework — pipeline, PR, SonarQube, custom monitors
 ├── SQLite Store — sessions, notifications, watchers, AzDo cache
 ├── Bundled Skills — auto-installed to ~/.copilot/skills/
-└── Config — TOML + env var enrichment + setup wizard
+└── Config — TOML + env vars + interactive setup wizard
 ```
 
 ## License
