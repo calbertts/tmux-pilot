@@ -837,7 +837,13 @@ impl<'a> App<'a> {
     }
 
     fn update_feature_filter(&mut self) {
-        let labels: Vec<String> = self.features.iter().map(|f| f.name.clone()).collect();
+        // Use AzDo title + ID for search (falls back to session name for free sessions)
+        let labels: Vec<String> = self.features.iter().map(|f| {
+            f.work_item.as_ref().map(|wi| {
+                let id_part = wi.id.map(|id| format!("#{} ", id)).unwrap_or_default();
+                format!("{}{} {}", id_part, wi.title, f.name)
+            }).unwrap_or_else(|| f.name.clone())
+        }).collect();
         let results = fuzzy::fuzzy_match(&self.feature_filter, &labels);
         self.filtered_indices = results.into_iter().map(|(idx, _)| idx).collect();
 
@@ -1840,23 +1846,39 @@ impl<'a> App<'a> {
                 prev_group = Some(&feature.group);
             }
 
-            let (icon, name_color, detail) = match feature.group {
+            let (icon, name_color, display_name, detail) = match feature.group {
                 FeatureGroup::Linked => {
-                    let id_str = feature
+                    // Show AzDo title + ID instead of tmux session name
+                    let label = feature
                         .work_item
                         .as_ref()
-                        .and_then(|wi| wi.id.map(|id| format!(" #{}", id)))
-                        .unwrap_or_default();
+                        .map(|wi| {
+                            let id_part = wi.id.map(|id| format!("#{} ", id)).unwrap_or_default();
+                            format!("{}{}", id_part, wi.title)
+                        })
+                        .unwrap_or_else(|| feature.name.clone());
                     (
                         "🏗",
                         Gruvbox::GREEN,
-                        format!("{}  {}w", id_str, feature.window_count),
+                        label,
+                        format!("  {}w", feature.window_count),
                     )
                 }
-                FeatureGroup::AzdoOnly => ("🏗", Gruvbox::GRAY, " ⊕ new".to_string()),
+                FeatureGroup::AzdoOnly => {
+                    let label = feature
+                        .work_item
+                        .as_ref()
+                        .map(|wi| {
+                            let id_part = wi.id.map(|id| format!("#{} ", id)).unwrap_or_default();
+                            format!("{}{}", id_part, wi.title)
+                        })
+                        .unwrap_or_else(|| feature.name.clone());
+                    ("🏗", Gruvbox::GRAY, label, " ⊕ new".to_string())
+                }
                 FeatureGroup::Free => (
                     "📂",
                     Gruvbox::FG,
+                    feature.name.clone(),
                     format!("{}w", feature.window_count),
                 ),
             };
@@ -1880,7 +1902,7 @@ impl<'a> App<'a> {
             let mut spans = vec![
                 Span::raw("  "),
                 Span::styled(format!("{} ", icon), Style::default().fg(name_color)),
-                Span::styled(&feature.name, Style::default().fg(name_color)),
+                Span::styled(display_name, Style::default().fg(name_color)),
                 Span::styled(format!("  {}", detail), Style::default().fg(detail_color)),
             ];
             spans.extend(state_spans);
