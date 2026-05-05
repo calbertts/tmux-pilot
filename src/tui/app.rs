@@ -92,6 +92,9 @@ pub struct App<'a> {
     // Vim-style: pending 'g' for gg combo
     pending_g: bool,
 
+    // Iteration filter toggle: true = @CurrentIteration, false = all
+    filter_current_iteration: bool,
+
     // Detail view state
     detail_work_item: Option<WorkItem>,
     detail_scroll: u16,
@@ -202,6 +205,7 @@ impl<'a> App<'a> {
             spinner_tick: 0,
             azdo_rx: None,
             pending_g: false,
+            filter_current_iteration: false,
             detail_work_item: None,
             detail_scroll: 0,
             demo,
@@ -427,10 +431,17 @@ impl<'a> App<'a> {
             return;
         }
 
-        let azdo_cfg = match self.cfg.azdo.clone() {
+        let mut azdo_cfg = match self.cfg.azdo.clone() {
             Some(cfg) if !cfg.organization.is_empty() && !cfg.project.is_empty() => cfg,
             _ => return,
         };
+
+        // Apply runtime iteration filter toggle
+        if self.filter_current_iteration {
+            azdo_cfg.filters.iteration = "current".to_string();
+        } else {
+            azdo_cfg.filters.iteration = String::new();
+        }
 
         match self.view {
             View::FeatureSelector => {
@@ -989,6 +1000,20 @@ impl<'a> App<'a> {
             self.store.clear_cache().ok();
             self.start_azdo_fetch();
             self.status_msg = Some("Refreshing from AzDo...".to_string());
+            return Ok(());
+        }
+
+        // C (shift+c): toggle iteration filter (all ↔ current sprint)
+        if key.code == KeyCode::Char('C') {
+            self.filter_current_iteration = !self.filter_current_iteration;
+            self.store.clear_cache().ok();
+            let label = if self.filter_current_iteration {
+                "Filter: current sprint"
+            } else {
+                "Filter: all iterations"
+            };
+            self.status_msg = Some(label.to_string());
+            self.start_azdo_fetch();
             return Ok(());
         }
 
@@ -1759,16 +1784,23 @@ impl<'a> App<'a> {
             .split(area);
 
         // Search line — minimal, no box
+        let iter_badge = if self.filter_current_iteration {
+            vec![Span::styled("  ⏱ sprint  ", Style::default().fg(Gruvbox::AQUA))]
+        } else {
+            vec![]
+        };
         let search_text = if self.feature_filter.is_empty() {
-            Line::from(vec![
+            let mut spans = vec![
                 Span::styled("  / ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled(
                     "filter...",
                     Style::default().fg(Gruvbox::FG),
                 ),
-            ])
+            ];
+            spans.extend(iter_badge);
+            Line::from(spans)
         } else {
-            Line::from(vec![
+            let mut spans = vec![
                 Span::styled("  / ", Style::default().fg(Gruvbox::ORANGE)),
                 Span::styled(
                     self.feature_filter.as_str(),
@@ -1776,7 +1808,9 @@ impl<'a> App<'a> {
                         .fg(Gruvbox::FG_BRIGHT)
                         .add_modifier(Modifier::BOLD),
                 ),
-            ])
+            ];
+            spans.extend(iter_badge);
+            Line::from(spans)
         };
         f.render_widget(Paragraph::new(search_text), chunks[0]);
 
@@ -1888,6 +1922,8 @@ impl<'a> App<'a> {
                 Span::styled(" tasks  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("d", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled("C", Style::default().fg(Gruvbox::FG)),
+                Span::styled(" sprint  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("R", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" refresh  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
