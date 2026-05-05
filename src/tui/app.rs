@@ -984,6 +984,14 @@ impl<'a> App<'a> {
             return Ok(());
         }
 
+        // R (shift+r): force refresh — clear cache and re-fetch from AzDo
+        if key.code == KeyCode::Char('R') {
+            self.store.clear_cache().ok();
+            self.start_azdo_fetch();
+            self.status_msg = Some("Refreshing from AzDo...".to_string());
+            return Ok(());
+        }
+
         // First 'g': start gg combo (only in views with filter, not in dashboard)
         if key.code == KeyCode::Char('g') {
             self.pending_g = true;
@@ -1880,6 +1888,8 @@ impl<'a> App<'a> {
                 Span::styled(" tasks  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("d", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" detail  ", Style::default().fg(Gruvbox::GRAY)),
+                Span::styled("R", Style::default().fg(Gruvbox::FG)),
+                Span::styled(" refresh  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" new  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("q", Style::default().fg(Gruvbox::FG)),
@@ -2062,6 +2072,8 @@ impl<'a> App<'a> {
                 help.push(Span::styled(" back  ", Style::default().fg(Gruvbox::GRAY)));
             }
             help.extend([
+                Span::styled("R", Style::default().fg(Gruvbox::FG)),
+                Span::styled(" refresh  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^n", Style::default().fg(Gruvbox::FG)),
                 Span::styled(" +copilot  ", Style::default().fg(Gruvbox::GRAY)),
                 Span::styled("^t", Style::default().fg(Gruvbox::FG)),

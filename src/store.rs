@@ -333,6 +333,11 @@ impl Store {
         Ok(())
     }
 
+    pub fn clear_cache(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM azdo_cache", [])?;
+        Ok(())
+    }
+
     // ─── Notifications ───────────────────────────────────────
 
     pub fn add_notification(
